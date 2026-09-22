@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PRED — Ghost Events</title>
+  <meta name="description" content="PRED dashboard — Ghost Event detection, investigation, verification and learning for tokenized equities." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="app-body">
+  <div class="shell">
+    <aside class="sidebar" aria-label="Navigation">
+      <a class="side-brand" href="/">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/><circle cx="9.6" cy="10" r="1.2"/><circle cx="14.4" cy="10" r="1.2"/></svg></span>
+        <span class="side-word">PRED</span>
+      </a>
+      <nav class="side-nav">
+        <a href="#overview" class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</a>
+        <a href="#feed"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Ghost Events</a>
+        <a href="#graph-sec"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M7.3 11l9.4-4M7.3 13l9.4 4"/></svg>Catalyst Graph</a>
+        <a href="#timeline-sec"><svg viewBox="0 0 24 24"><path d="M12 3v18M12 7h6M12 12H6M12 17h5"/></svg>Timeline</a>
+        <a href="#hyp-sec"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Hypotheses</a>
+        <a href="#reaction-sec"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>Reaction</a>
+        <a href="#memory-sec"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Memory</a>
+      </nav>
+      <div class="side-label">Mode</div>
+      <div class="mode-switch" role="tablist" aria-label="Mode">
+        <button role="tab" data-mode="demo" class="active">Demo</button>
+        <button role="tab" data-mode="live">Live</button>
+      </div>
+      <div class="side-label">Integrations</div>
+      <div class="side-links">
+        <a href="#" id="signalsLink" target="_blank"><svg viewBox="0 0 24 24"><path d="M4 12h4l3-8 4 16 3-8h2"/></svg>Signals API</a>
+        <a href="/"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Back to site</a>
+      </div>
+      <div class="side-foot">
+        <div class="side-card">
+          <div class="side-card-title">Market data</div>
+          <div id="sideFeed" class="side-card-body">—</div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="app-header">
+        <div class="page-title">
+          <span class="pt-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/></svg></span>
+          <div>
+            <h1>Ghost Events</h1>
+            <div class="pt-sub">24/7 event intelligence for tokenized equities</div>
+          </div>
+        </div>
+        <div class="status-row" id="statusRow"></div>
+      </header>
+
+      <section class="asset-strip" id="assetStrip" aria-label="Monitored assets"></section>
+
+      <section class="demo-bar" id="demoBar" hidden>
+        <div class="demo-top">
+          <div class="demo-title"><span class="tag tag-simulated">Simulated scenario</span><span id="demoNarration" class="demo-narration"></span></div>
+          <div class="demo-actions">
+            <button id="btnReset" class="btn">Reset</button>
+            <button id="btnAuto" class="btn">Auto-play</button>
+            <button id="btnNext" class="btn primary">Next step →</button>
+          </div>
+        </div>
+        <div class="demo-steps" id="demoSteps"></div>
+      </section>
+
+      <main class="grid">
+        <aside class="panel feed" data-panel="feed" id="feed">
+          <div class="panel-head"><h2>Event feed</h2><span class="muted" id="feedCount"></span></div>
+          <div id="eventList" class="event-list"></div>
+          <div class="panel-head sub"><h3>Agent log</h3></div>
+          <div id="sysLog" class="sys-log"></div>
+        </aside>
+
+        <section class="center">
+          <div class="panel hero" data-panel="hero" id="overview"><div id="hero"></div></div>
+          <div class="panel graph-panel" data-panel="graph" id="graph-sec">
+            <div class="panel-head">
+              <h2>Catalyst graph</h2>
+              <div class="legend">
+                <span><i class="lg lg-sup"></i>supports</span>
+                <span><i class="lg lg-con"></i>contradicts</span>
+                <span><i class="lg lg-str"></i>investigation path</span>
+              </div>
+            </div>
+            <div id="graph" class="graph"></div>
+          </div>
+          <div class="panel timeline-panel" data-panel="timeline" id="timeline-sec">
+            <div class="panel-head"><h2>Event timeline</h2><span class="muted">Append-only · earlier reasoning is never overwritten</span></div>
+            <div id="timeline" class="timeline"></div>
+          </div>
+        </section>
+
+        <aside class="right">
+          <div class="panel" data-panel="hypotheses" id="hyp-sec">
+            <div class="panel-head">
+              <h2>Catalyst hypotheses</h2>
+              <div class="rev-nav" id="revNav"></div>
+            </div>
+            <div id="hypotheses"></div>
+          </div>
+          <div class="panel" data-panel="reaction" id="reaction-sec">
+            <div class="panel-head"><h2>Market reaction</h2><span class="tag tag-ai_hypothesis">Model estimate</span></div>
+            <div id="reaction"></div>
+          </div>
+          <div class="panel" data-panel="action">
+            <div class="panel-head"><h2>Action posture</h2><span class="muted">PRED does not trade</span></div>
+            <div id="action"></div>
+          </div>
+        </aside>
+      </main>
+
+      <section class="panel memory" data-panel="memory" id="memory-sec">
+        <div class="panel-head">
+          <h2>PRED Memory · self-evaluation</h2>
+          <span class="muted" id="memoryNote"></span>
+        </div>
+        <div id="memory"></div>
+      </section>
+
+      <footer class="foot">
+        <span>PRED — 24/7 market event intelligence for tokenized equities. Not financial advice.</span>
+        <span class="prov-legend">
+          <span class="tag tag-live">Live</span> real-time data
+          <span class="tag tag-historical">Historical</span> PRED Memory
+          <span class="tag tag-simulated">Simulated</span> scenario / backtest
+          <span class="tag tag-ai_hypothesis">AI hypothesis</span> model output
+        </span>
+      </footer>
+    </div>
+  </div>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

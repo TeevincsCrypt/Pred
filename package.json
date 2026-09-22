@@ -1,0 +1,21 @@
+{
+  "name": "pred",
+  "version": "0.1.0",
+  "description": "PRED — Predictive Reaction Event Detector. 24/7 market event intelligence for tokenized equities.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "demo:cli": "node examples/demo-cli.mjs",
+    "check:bitget": "node examples/check-bitget.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  },
+  "license": "MIT"
+}

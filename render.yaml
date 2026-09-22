@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: pred
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PRED_LIVE
+        value: "1"
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
