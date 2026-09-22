@@ -4,109 +4,291 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PRED — Ghost Event Intelligence</title>
-  <meta name="description" content="PRED — Predictive Reaction Event Detector. 24/7 market event intelligence for tokenized equities." />
+  <meta name="description" content="PRED detects abnormal moves in 24/7 tokenized U.S. equities while the market is closed, investigates the hidden catalyst, and tracks every hypothesis until the news confirms it." />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/landing.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo" aria-hidden="true"><span></span></div>
-      <div>
-        <div class="wordmark">PRED</div>
-        <div class="tagline">Find what the market knows before the news says it.</div>
-      </div>
+  <!-- NAV -->
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a href="/" class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/><circle cx="9.6" cy="10" r="1.2"/><circle cx="14.4" cy="10" r="1.2"/></svg></span>PRED</a>
+      <nav class="nav-links">
+        <a href="#how">How it works</a>
+        <a href="#lifecycle">Lifecycle</a>
+        <a href="#track-record">Track record</a>
+        <a href="#bitget">Bitget</a>
+      </nav>
+      <a class="btn primary" href="/app">Launch demo <span aria-hidden="true">→</span></a>
     </div>
-    <div class="mode-switch" role="tablist" aria-label="Mode">
-      <button role="tab" data-mode="demo" class="active">Demo</button>
-      <button role="tab" data-mode="live">Live</button>
-    </div>
-    <div class="status-row" id="statusRow"></div>
   </header>
 
-  <section class="asset-strip" id="assetStrip" aria-label="Monitored assets"></section>
-
-  <section class="demo-bar" id="demoBar" hidden>
-    <div class="demo-left">
-      <span class="tag tag-sim">SIMULATED SCENARIO</span>
-      <div class="demo-steps" id="demoSteps"></div>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid-bg" aria-hidden="true"></div>
+    <div class="wrap hero-in">
+      <div class="eyebrow">Traditional markets close. Information doesn't.</div>
+      <h1>Find what the market knows<br />before <span class="hl">the news says it.</span></h1>
+      <p class="lede">PRED watches tokenized U.S. equities around the clock. When one moves abnormally while Wall Street is closed, PRED opens a <b>Ghost Event</b>, investigates the hidden catalyst, and tracks every hypothesis until the news confirms or kills it.</p>
+      <div class="cta-row">
+        <a class="btn primary lg" href="/app">Launch the live demo <span aria-hidden="true">→</span></a>
+        <a class="btn lg" href="#how">See how it works</a>
+      </div>
+      <div class="micro">24/7 event intelligence for tokenized equities · Market data by Bitget</div>
     </div>
-    <div class="demo-narration" id="demoNarration"></div>
-    <div class="demo-actions">
-      <button id="btnReset" class="btn ghost">Reset</button>
-      <button id="btnAuto" class="btn ghost">Auto-play</button>
-      <button id="btnNext" class="btn primary">Next step →</button>
-    </div>
-  </section>
 
-  <main class="grid">
-    <aside class="panel feed" data-panel="feed">
-      <div class="panel-head"><h2>Event feed</h2><span class="muted" id="feedCount"></span></div>
-      <div id="eventList" class="event-list"></div>
-      <div class="panel-head sub"><h3>Agent log</h3></div>
-      <div id="sysLog" class="sys-log"></div>
-    </aside>
-
-    <section class="center">
-      <div class="panel hero" data-panel="hero" id="hero"></div>
-      <div class="panel graph-panel" data-panel="graph">
-        <div class="panel-head">
-          <h2>Catalyst graph</h2>
-          <div class="legend">
-            <span><i class="lg lg-sup"></i>supports</span>
-            <span><i class="lg lg-con"></i>contradicts</span>
-            <span><i class="lg lg-str"></i>investigation path</span>
+    <!-- Product mockup -->
+    <div class="wrap">
+      <div class="browser" role="img" aria-label="PRED dashboard showing Ghost Event 184 on NVDAx">
+        <div class="browser-bar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>pred.app/app</span>
+          <span class="sim-flag">Demo scenario · simulated data</span>
+        </div>
+        <div class="mock">
+          <aside class="mock-side">
+            <div class="mock-brand"><span class="mark sm"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/></svg></span>PRED</div>
+            <span class="mi active">Overview</span><span class="mi">Ghost Events</span><span class="mi">Catalyst Graph</span><span class="mi">Timeline</span><span class="mi">Hypotheses</span><span class="mi">Reaction</span><span class="mi">Memory</span>
+          </aside>
+          <div class="mock-main">
+            <div class="mock-head">
+              <b>Ghost Events</b>
+              <span class="mpill"><i class="d warn"></i>US MARKET CLOSED · Sun 17:15 ET</span>
+            </div>
+            <div class="mock-row">
+              <div class="mcard ghost">
+                <div class="g-code"><i class="d pri"></i>GHOST EVENT #184</div>
+                <div class="g-tk">NVDAx</div>
+                <div class="g-mv"><span class="up">+2.34%</span><span>Volume +640%</span></div>
+                <div class="g-kv"><span>Catalyst</span><b>UNKNOWN</b></div>
+                <div class="g-kv"><span>PRED confidence</span><b class="pri-t">67%</b></div>
+                <div class="g-kv"><span>Status</span><b class="badge">INVESTIGATING</b></div>
+              </div>
+              <div class="mcard chart">
+                <div class="mc-title">NVDAx · 1-minute closes</div>
+                <svg viewBox="0 0 400 130" preserveAspectRatio="none" aria-hidden="true">
+                  <defs><linearGradient id="mg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3b3ff0" stop-opacity=".22"/><stop offset="1" stop-color="#3b3ff0" stop-opacity="0"/></linearGradient></defs>
+                  <path d="M0 96 L20 94 L40 97 L60 93 L80 95 L100 92 L120 96 L140 94 L160 97 L180 93 L200 95 L220 94 L240 96 L260 92 L270 88 L280 70 L290 52 L300 38 L310 30 L320 33 L335 28 L350 31 L365 26 L380 29 L400 24 L400 130 L0 130Z" fill="url(#mg)"/>
+                  <path d="M0 96 L20 94 L40 97 L60 93 L80 95 L100 92 L120 96 L140 94 L160 97 L180 93 L200 95 L220 94 L240 96 L260 92 L270 88 L280 70 L290 52 L300 38 L310 30 L320 33 L335 28 L350 31 L365 26 L380 29 L400 24" fill="none" stroke="#3b3ff0" stroke-width="2.2"/>
+                  <line x1="300" x2="300" y1="0" y2="130" stroke="#3b3ff0" stroke-dasharray="3 3"/>
+                  <text x="306" y="12" fill="#3b3ff0" font-size="10" font-family="Inter" font-weight="600">Detected</text>
+                  <line x1="0" x2="400" y1="95" y2="95" stroke="#8a8ea3" stroke-dasharray="2 4"/>
+                </svg>
+              </div>
+            </div>
+            <div class="mock-row two">
+              <div class="mcard">
+                <div class="mc-title">Catalyst hypotheses <span class="mtag">model estimates</span></div>
+                <div class="hb"><span>Company-specific catalyst</span><b>67%</b><i style="--w:67%;--c:#2a78d6"></i></div>
+                <div class="hb"><span>Unknown / unexplained</span><b>15%</b><i style="--w:15%;--c:#9ca0b3"></i></div>
+                <div class="hb"><span>Sector-wide repricing</span><b>7%</b><i style="--w:7%;--c:#eb6834"></i></div>
+                <div class="hb"><span>Macro / crypto flow</span><b>4%</b><i style="--w:4%;--c:#1baf7a"></i></div>
+              </div>
+              <div class="mcard">
+                <div class="mc-title">Evidence</div>
+                <div class="ev"><span class="w pos">+1.00</span>88% of the move not explained by peers</div>
+                <div class="ev"><span class="w pos">+0.60</span>Discussion velocity 3.8× baseline</div>
+                <div class="ev"><span class="w pos">+0.50</span>Volume 7.4× suggests informed flow</div>
+                <div class="ev"><span class="w neg">−0.10</span>No public company news yet</div>
+              </div>
+            </div>
           </div>
         </div>
-        <div id="graph" class="graph"></div>
       </div>
-      <div class="panel timeline-panel" data-panel="timeline">
-        <div class="panel-head"><h2>Event timeline</h2><span class="muted">append-only · earlier reasoning is never overwritten</span></div>
-        <div id="timeline" class="timeline"></div>
-      </div>
-    </section>
-
-    <aside class="right">
-      <div class="panel" data-panel="hypotheses">
-        <div class="panel-head">
-          <h2>Catalyst hypotheses</h2>
-          <div class="rev-nav" id="revNav"></div>
-        </div>
-        <div id="hypotheses"></div>
-      </div>
-      <div class="panel" data-panel="reaction">
-        <div class="panel-head"><h2>Market reaction</h2><span class="tag tag-ai">MODEL ESTIMATE</span></div>
-        <div id="reaction"></div>
-      </div>
-      <div class="panel" data-panel="action">
-        <div class="panel-head"><h2>Action posture</h2><span class="muted">PRED does not trade</span></div>
-        <div id="action"></div>
-      </div>
-    </aside>
-  </main>
-
-  <section class="panel memory" data-panel="memory">
-    <div class="panel-head">
-      <h2>PRED Memory · self-evaluation</h2>
-      <span class="muted" id="memoryNote"></span>
     </div>
-    <div id="memory"></div>
   </section>
 
-  <footer class="foot">
-    <span>PRED — 24/7 market event intelligence for tokenized equities. Not financial advice.</span>
-    <span class="prov-legend">
-      <span class="tag tag-live">LIVE</span> real-time data
-      <span class="tag tag-hist">HISTORICAL</span> PRED Memory
-      <span class="tag tag-sim">SIMULATED</span> scenario / backtest data
-      <span class="tag tag-ai">AI HYPOTHESIS</span> model output
-    </span>
+  <!-- PROBLEM -->
+  <section class="section problem" id="how">
+    <div class="wrap split">
+      <div>
+        <h2>Tokenized stocks move while the news sleeps</h2>
+        <p class="sub">NVIDIA's token trades on a Sunday evening. Wall Street doesn't open until Monday 09:30 ET. When price and volume jump in that gap, nobody explains it. The move is either information arriving early or noise from a thin order book.</p>
+        <ul class="warn-list">
+          <li><span class="wi">!</span>No public catalyst for a +2.34% move</li>
+          <li><span class="wi">!</span>Price reacts 16 hours before the U.S. open</li>
+          <li><span class="wi">!</span>Liquidity noise looks just like information</li>
+          <li><span class="wi">!</span>Nobody checks whether the explanation was right</li>
+        </ul>
+      </div>
+      <div class="stack" aria-hidden="true">
+        <div class="note n1"><b>NVDAx +2.34% in 5 minutes</b><span>Sunday 17:15 ET · U.S. market closed</span></div>
+        <div class="note n2"><b>News scan: 0 matching headlines</b><span>No company announcement found</span></div>
+        <div class="note n3"><b>Volume +640% vs baseline</b><span>Peers barely moved: AMDx +0.38%</span></div>
+        <div class="note n4"><b>Social chatter 3.8× normal</b><span>"supply agreement?" · unverified</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIFECYCLE -->
+  <section class="section" id="lifecycle">
+    <div class="wrap">
+      <div class="head-split">
+        <h2>Track a Ghost Event the way analysts actually work</h2>
+        <div>
+          <p class="sub">Every event moves through clear stages, from detection to learning. Every stage is timestamped and never overwritten.</p>
+          <a class="btn primary" href="/app">Replay this event →</a>
+        </div>
+      </div>
+      <div class="card gantt">
+        <div class="gantt-head">
+          <b>Ghost Event #184 · NVDAx</b>
+          <span class="tag sim">Simulated demo scenario</span>
+        </div>
+        <div class="gantt-grid">
+          <div class="gh">Stage</div>
+          <div class="gh gaxis">
+            <span style="left:0%">Sun 17:00</span><span style="left:17.4%">21:00</span><span style="left:34.8%">Mon 01:00</span><span style="left:52.2%">05:00</span><span style="left:71.7%">09:30 open</span><span style="left:100%;transform:translateX(-100%)">16:00 close</span>
+          </div>
+          <div class="gh right">Duration</div>
+
+          <div class="gl"><b>Detect</b><span>Price z 35σ · vol 7.4×</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"><span>U.S. market closed</span></div><i class="gb" style="left:0.7%;width:1.2%"></i></div>
+          <div class="gd">5 min</div>
+
+          <div class="gl"><b>Investigate</b><span>10 channels checked</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"></div><i class="gb" style="left:1.1%;width:1.2%"></i></div>
+          <div class="gd">&lt; 1 min</div>
+
+          <div class="gl"><b>Hypothesize</b><span>Company-specific 67%</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"></div><i class="gb" style="left:1.1%;width:1.6%"></i></div>
+          <div class="gd">5 revisions</div>
+
+          <div class="gl"><b>Verify</b><span>Confirmed by official release</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"></div><i class="gb hot" style="left:1.1%;width:60.3%"><em>Move held · chatter accelerates · release 07:02</em></i></div>
+          <div class="gd">13h 50m</div>
+
+          <div class="gl"><b>Predict</b><span>+2.36% est. (+1.66 → +3.87)</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"></div><i class="gb soft" style="left:61.4%;width:38.6%"></i></div>
+          <div class="gd">to close</div>
+
+          <div class="gl"><b>Learn</b><span>Actual +3.44% · in range</span></div>
+          <div class="gt"><div class="closed-zone" style="width:71.7%"></div><i class="gb ok" style="left:98.6%;width:1.4%"></i></div>
+          <div class="gd">stored #184</div>
+        </div>
+        <div class="gantt-foot"><span>Detected Sun 17:15 ET</span><span>Confirmed Mon 07:05 ET · <b>before the open</b></span></div>
+      </div>
+      <p class="tagline-center">Evidence first. Hypotheses second. Certainty never.</p>
+    </div>
+  </section>
+
+  <!-- CONTROL / TABLE -->
+  <section class="section alt">
+    <div class="wrap split rev">
+      <div class="card table-card">
+        <table class="etable">
+          <thead><tr><th>Event</th><th>Asset</th><th>Leading hypothesis</th><th>Confidence</th><th>Outcome</th></tr></thead>
+          <tbody id="eventRows">
+            <tr><td colspan="5" class="muted">Loading PRED Memory…</td></tr>
+          </tbody>
+        </table>
+        <div class="table-note"><span class="tag sim">Simulated backtest</span> Latest resolved events from PRED Memory's seed, graded by the Memory Agent</div>
+      </div>
+      <div>
+        <h2>Stay ahead of the open, not behind it</h2>
+        <p class="sub">PRED shows every Ghost Event in one place: the leading hypothesis, how confident the model is, and whether reality agreed. Liquidity noise gets filtered out, real catalysts get confirmed, and wrong calls stay on the record.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOOP -->
+  <section class="section">
+    <div class="wrap">
+      <div class="head-split">
+        <h2>Every unexplained move becomes a testable hypothesis</h2>
+        <div>
+          <p class="sub">Six focused agents, each with one job. Every probability can be traced to the evidence behind it, and PRED says so when it doesn't know.</p>
+        </div>
+      </div>
+      <div class="steps">
+        <div class="step s1"><span class="si"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><b>Detect</b><p>Price z-score, volume, volatility, spread and peer residual on 1-minute bars while the U.S. market is closed.</p></div>
+        <div class="chev" aria-hidden="true">›</div>
+        <div class="step s2"><span class="si"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></span><b>Investigate</b><p>Peers, sector, crypto, news, filings, social, calendar and memory. Every source reports a status.</p></div>
+        <div class="chev" aria-hidden="true">›</div>
+        <div class="step s3"><span class="si"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span><b>Verify</b><p>New evidence supports or contradicts the hypothesis. Official releases and 8-Ks resolve it.</p></div>
+        <div class="chev" aria-hidden="true">›</div>
+        <div class="step s4"><span class="si"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></span><b>Learn</b><p>The prediction is compared with reality, the failure cause is recorded, and calibration is tracked over time.</p></div>
+      </div>
+      <div class="card example">
+        <div class="ex-head"><b>Real example</b><span>How the loop closes in the demo scenario (simulated data)</span></div>
+        <div class="ex-row">
+          <div class="ex-item"><span class="ck">✓</span><div><b>Official release detected Mon 07:02 ET</b><span>Company-specific hypothesis confirmed · 67% at detection</span></div></div>
+          <div class="ex-item"><span class="ck">✓</span><div><b>Actual reaction +3.44% vs estimate +2.36%</b><span>Inside the predicted +1.66% → +3.87% range</span></div></div>
+        </div>
+        <div class="ex-foot">No invented evidence. No certainty. Every step on the record.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRACK RECORD -->
+  <section class="section alt" id="track-record">
+    <div class="wrap">
+      <div class="center-head">
+        <h2>Watch PRED grade itself, event by event</h2>
+        <p class="sub">Every Ghost Event is scored against reality: direction, catalyst, reaction range, time to confirmation and false positives. PRED also records why each miss happened.</p>
+      </div>
+      <div class="kpis" id="kpis">
+        <div class="kpi"><span>Events analyzed</span><b>—</b></div>
+        <div class="kpi"><span>Direction accuracy</span><b>—</b></div>
+        <div class="kpi"><span>Catalyst accuracy</span><b>—</b></div>
+        <div class="kpi"><span>Within predicted range</span><b>—</b></div>
+        <div class="kpi"><span>Brier score</span><b>—</b></div>
+      </div>
+      <div class="tr-grid">
+        <div class="card">
+          <div class="card-title">Calibration · stated vs observed</div>
+          <div id="relChart"></div>
+          <div class="cap">Points on the dashed line mean PRED's confidence matched reality.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Why predictions failed</div>
+          <div id="failList"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Outcome mix</div>
+          <div id="mix"></div>
+        </div>
+      </div>
+      <p class="honest"><span class="tag sim">Simulated backtest</span> <span id="trNote">Synthetic events run through PRED's real models, walk-forward. Live events are stored separately and labeled LIVE.</span></p>
+    </div>
+  </section>
+
+  <!-- BITGET -->
+  <section class="section" id="bitget">
+    <div class="wrap">
+      <div class="head-split">
+        <h2>Built on Bitget's 24/7 markets</h2>
+        <p class="sub">PRED is an intelligence layer, not a trading bot. It reads Bitget market data and publishes verified signals. What happens next is up to a separate agent with its own risk controls.</p>
+      </div>
+      <div class="three">
+        <div class="card feat"><span class="fi f1"><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-6M22 19H2"/></svg></span><b>Bitget market data</b><p>Tokenized-equity symbols discovered from the Bitget spot API v2. PRED polls 1-minute candles and bid/ask quotes, and every live item is labeled LIVE.</p></div>
+        <div class="card feat"><span class="fi f2"><svg viewBox="0 0 24 24"><path d="M4 12h4l3-8 4 16 3-8h2"/></svg></span><b>Agent-ready signals</b><p><code>/api/signals</code> publishes confirmed catalysts with an explicit risk policy for execution agents on Bitget Agent Hub.</p></div>
+        <div class="card feat"><span class="fi f3"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span><b>PRED never trades</b><p>MONITOR · WAIT · RESEARCH · CONSIDER TRADE. It recommends a posture, while stops, size limits and human approval belong to the executor.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="wrap cta-in">
+      <h2>Traditional markets close.<br /><span class="hl">Information doesn't.</span></h2>
+      <p>Replay a full Ghost Event from detection to the Monday close in three minutes.</p>
+      <div class="cta-row center"><a class="btn primary lg" href="/app">Launch the demo →</a><a class="btn lg" href="/app?mode=live">Open live mode</a></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="wrap foot-in">
+      <a href="/" class="brand sm"><span class="mark sm"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/></svg></span>PRED</a>
+      <span>Predictive Reaction Event Detector · built for Bitget AI Genesis Season 2</span>
+      <span>Not financial advice.</span>
+    </div>
   </footer>
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/landing.js"></script>
 </body>
 </html>

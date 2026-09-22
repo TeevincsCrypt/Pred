@@ -1,12 +1,17 @@
 // PRED server: zero-dependency HTTP + Server-Sent Events.
 //
-//   GET  /                       dashboard
-//   GET  /api/state?mode=&event= snapshot (live | demo)
-//   GET  /api/stream?mode=&event= SSE snapshots
-//   GET  /api/events/:id?mode=   full event detail
-//   GET  /api/signals?mode=      verified signals for an external execution agent
-//   POST /api/demo/next | /api/demo/reset | /api/demo/autoplay?on=1
+//   GET  /                            landing page
+//   GET  /app                         dashboard
+//   GET  /api/state?mode=&event=&sid= snapshot (live | demo)
+//   GET  /api/stream?mode=&event=&sid= SSE snapshots
+//   GET  /api/events/:id?mode=&sid=   full event detail
+//   GET  /api/signals?mode=&sid=      verified signals for an external execution agent
+//   POST /api/demo/next | /api/demo/reset | /api/demo/autoplay?on=1   (all take &sid=)
+//   GET  /api/track-record            simulated-backtest memory stats (landing page)
 //   GET  /api/health
+//
+// Demo mode is per browser session (`sid`), so concurrent visitors never
+// drive each other's scenario. LIVE mode is shared: there is one market.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -22,7 +27,7 @@ import { createSecSource } from './sources/sec.js';
 import { createNewsSource } from './sources/news.js';
 import { createCalendarSource } from './sources/calendar.js';
 import { createUnavailableSource } from './sources/unavailable.js';
-import { createDemo } from './demo/runner.js';
+import { createDemoSessions } from './demo/sessions.js';
 import { generateSeed } from './demo/seed.js';
 import { buildSignals } from './core/signals.js';
 
@@ -54,15 +59,24 @@ const feed = createLiveFeed({ engine: live, universe: ASSETS, monitored: config.
 if (config.live) feed.start();
 else live.setFeedStatus({ status: 'disabled', note: 'Live feed disabled (PRED_LIVE=0)' });
 
-// ---------- DEMO ----------
-const demo = createDemo();
+// ---------- DEMO (one per browser session) ----------
+const demos = createDemoSessions();
+const liveListeners = new Set();
+live.onChange(() => {
+  for (const fn of liveListeners) fn();
+});
 
-const engineFor = (mode) => (mode === 'live' ? live : demo.engine);
+// Static track record for the landing page: the simulated backtest seed.
+const trackRecord = (() => {
+  const mem = createMemory({ records: generateSeed() });
+  const s = mem.stats();
+  return { provenance: 'SIMULATED', note: 'Simulated backtest: synthetic events run through PRED\'s real models (walk-forward)', total: s.total, confirmedCatalysts: s.confirmedCatalysts, liquidityAnomalies: s.liquidityAnomalies, falseHypotheses: s.falseHypotheses, unresolvedOther: s.unresolvedOther, accuracy: s.accuracy, calibration: s.calibration, failures: s.failures, recent: s.recent };
+})();
 
-function snapshot(mode, selectedId) {
-  const snap = engineFor(mode).snapshot({ selectedId });
-  if (mode === 'demo') snap.demo = demo.status();
-  return snap;
+function snapshot(mode, selectedId, sid) {
+  if (mode === 'live') return live.snapshot({ selectedId });
+  const d = demos.get(sid).demo;
+  return { ...d.engine.snapshot({ selectedId }), demo: d.status() };
 }
 
 // ---------- HTTP ----------
@@ -73,63 +87,62 @@ function json(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
-const clients = new Set();
-function broadcast() {
-  for (const c of clients) {
-    if (c.pending) continue;
+// Each SSE client listens only to its own engine, throttled.
+function makePush(c) {
+  return () => {
+    if (c.pending) return;
     c.pending = true;
     setTimeout(() => {
       c.pending = false;
-      c.res.write(`data: ${JSON.stringify(snapshot(c.mode, c.selected))}\n\n`);
+      c.res.write(`data: ${JSON.stringify(snapshot(c.mode, c.selected, c.sid))}\n\n`);
     }, 150);
-  }
+  };
 }
-live.onChange(broadcast);
-let unsubDemo = demo.engine.onChange(broadcast);
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const mode = url.searchParams.get('mode') === 'live' ? 'live' : 'demo';
+  const sid = url.searchParams.get('sid');
+  const engineFor = () => (mode === 'live' ? live : demos.get(sid).demo.engine);
   try {
-    if (url.pathname === '/api/health') return json(res, 200, { ok: true, live: live.feedStatus, demoStep: demo.status().step });
-    if (url.pathname === '/api/state') return json(res, 200, snapshot(mode, url.searchParams.get('event')));
+    if (url.pathname === '/api/health') return json(res, 200, { ok: true, live: live.feedStatus, demoSessions: demos.size });
+    if (url.pathname === '/api/track-record') return json(res, 200, trackRecord);
+    if (url.pathname === '/api/state') return json(res, 200, snapshot(mode, url.searchParams.get('event'), sid));
     if (url.pathname.startsWith('/api/events/')) {
-      const d = engineFor(mode).eventDetail(decodeURIComponent(url.pathname.split('/').pop()));
+      const d = engineFor().eventDetail(decodeURIComponent(url.pathname.split('/').pop()));
       return d ? json(res, 200, d) : json(res, 404, { error: 'not found' });
     }
-    if (url.pathname === '/api/signals') return json(res, 200, buildSignals(engineFor(mode)));
+    if (url.pathname === '/api/signals') return json(res, 200, buildSignals(engineFor()));
     if (url.pathname === '/api/stream') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-      const c = { res, mode, selected: url.searchParams.get('event'), pending: false };
-      clients.add(c);
-      res.write(`data: ${JSON.stringify(snapshot(mode, c.selected))}\n\n`);
+      const c = { res, mode, sid, selected: url.searchParams.get('event'), pending: false };
+      const push = makePush(c);
+      const session = mode === 'demo' ? demos.get(sid) : null;
+      const listeners = session ? session.listeners : liveListeners;
+      listeners.add(push);
+      res.write(`data: ${JSON.stringify(snapshot(mode, c.selected, sid))}\n\n`);
       const ka = setInterval(() => res.write(': ka\n\n'), 20_000);
       req.on('close', () => {
         clearInterval(ka);
-        clients.delete(c);
+        listeners.delete(push);
       });
       return;
     }
-    if (req.method === 'POST' && url.pathname === '/api/demo/next') {
-      demo.next().then(broadcast);
-      return json(res, 202, demo.status());
-    }
-    if (req.method === 'POST' && url.pathname === '/api/demo/reset') {
-      unsubDemo();
-      demo.reset();
-      unsubDemo = demo.engine.onChange(broadcast);
-      broadcast();
-      return json(res, 200, demo.status());
-    }
-    if (req.method === 'POST' && url.pathname === '/api/demo/autoplay') {
-      const on = url.searchParams.get('on') !== '0';
-      if (on) demo.autoplay(true).then(broadcast);
-      else demo.autoplay(false);
-      broadcast();
-      return json(res, 202, demo.status());
+    if (req.method === 'POST' && url.pathname.startsWith('/api/demo/')) {
+      const s = demos.get(sid);
+      const action = url.pathname.split('/').pop();
+      if (action === 'next') s.demo.next().then(s.notify);
+      else if (action === 'reset') demos.reset(s);
+      else if (action === 'autoplay') {
+        const on = url.searchParams.get('on') !== '0';
+        if (on) s.demo.autoplay(true).then(s.notify);
+        else s.demo.autoplay(false);
+      } else return json(res, 404, { error: 'unknown demo action' });
+      s.notify();
+      return json(res, 202, s.demo.status());
     }
     // static
-    const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    const rel = url.pathname === '/' ? 'index.html' : url.pathname === '/app' ? 'app.html' : url.pathname.slice(1);
     const file = path.normalize(path.join(WEB, rel));
     if (!file.startsWith(WEB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'not found' });
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });

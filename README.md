@@ -20,14 +20,14 @@ Built for the **Bitget AI Genesis Season 2** hackathon.
 
 ```bash
 node --version        # >= 20
-npm start             # http://localhost:8787
-npm test              # 21 tests: detector, calendar, hypotheses, verifier, memory, sources, full demo lifecycle
+npm start             # landing page http://localhost:8787 · dashboard http://localhost:8787/app
+npm test              # 22 tests: detector, calendar, hypotheses, verifier, memory, sources, demo sessions, full demo lifecycle
 npm run demo:cli      # the whole lifecycle, headless, printed as a timeline
 ```
 
 PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is only used when `ANTHROPIC_API_KEY` is set.
 
-Open the dashboard and press **Start demo → / Next step** (or **Auto-play**). You can also press → or Space to advance.
+Open the dashboard at `/app` and press **Start demo → / Next step** (or **Auto-play**). You can also press → or Space to advance. Each browser gets its **own demo session**, so several judges can run the demo at the same time without interfering.
 
 ## What a judge sees in Demo mode (15 steps, deterministic, clearly labeled SIMULATED)
 
@@ -150,20 +150,32 @@ With `ANTHROPIC_API_KEY` set, each hypothesis revision gets a short narrative fr
 
 | Method | Path | |
 |---|---|---|
-| GET | `/api/state?mode=demo\|live&event=<id>` | full snapshot |
+| GET | `/` · `/app` | landing page · dashboard |
+| GET | `/api/state?mode=demo\|live&event=<id>&sid=<session>` | full snapshot (demo is per `sid`) |
+| GET | `/api/track-record` | simulated-backtest stats (used by the landing page) |
 | GET | `/api/stream?mode=&event=` | Server-Sent Events snapshots |
 | GET | `/api/events/:id?mode=` | event detail, including graph, chart and action |
 | GET | `/api/signals?mode=` | verified signals + risk policy |
 | POST | `/api/demo/next`, `/api/demo/reset`, `/api/demo/autoplay?on=1` | demo control |
 | GET | `/api/health` | health + feed status |
 
-## Deploy
+## Deploy (recommended: Railway)
+
+PRED is a **long-running server**. It polls Bitget every 20 seconds, keeps event state in memory, and streams updates to the browser over Server-Sent Events. That fits a persistent container host like **Railway**. Serverless platforms such as Vercel stop functions after each request, which would kill the poller and the SSE streams.
+
+**Railway**
+1. Push the repo to GitHub, then in Railway choose **New Project → Deploy from GitHub repo**. `railway.json` tells Railway to build the `Dockerfile` and health-check `/api/health`.
+2. Under **Variables**, set `SEC_USER_AGENT` (your name and email). Optionally set `ANTHROPIC_API_KEY` and `PRED_SYMBOL_MAP`. Railway sets `PORT` itself.
+3. Under **Settings → Networking**, choose **Generate Domain**.
+4. Optional: to keep live memory across redeploys, attach a **Volume** mounted at `/app/data`.
+
+**Docker anywhere**
 
 ```bash
 docker build -t pred . && docker run -p 8787:8787 -e SEC_USER_AGENT="you@example.com" pred
 ```
 
-`render.yaml` is included for a one-click Render deploy. Any Node 20+ host works: `npm start`.
+`render.yaml` is included as an alternative for Render. Any Node 20+ host works: `npm start`.
 
 ## Repository layout
 
@@ -173,9 +185,9 @@ src/
   core/        engine (lifecycle) · graph · action · signals
   market/      bitget client · live feed · US market calendar · series store · universe
   sources/     GDELT news · SEC EDGAR · calendar · scripted (demo) · unavailable
-  demo/        scenario (simulated tape) · runner (15 steps) · seed (simulated backtest)
+  demo/        scenario (simulated tape) · runner (15 steps) · seed (simulated backtest) · per-visitor sessions
   server.js    HTTP + SSE
-web/           dashboard (vanilla JS, inline SVG)
+web/           landing page (index.html) + dashboard (app.html), vanilla JS, inline SVG
 test/          node:test suites
 examples/      demo CLI · Bitget check · dry-run execution agent
 docs/          demo video script

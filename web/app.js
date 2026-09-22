@@ -12,6 +12,16 @@ const store = (k, v) => {
   }
 };
 
+// Each browser gets its own demo session so visitors never drive each other's scenario.
+const sid = (() => {
+  let v = store('pred.sid');
+  if (!v) {
+    v = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    store('pred.sid', v);
+  }
+  return v;
+})();
+
 const ui = {
   mode: new URLSearchParams(location.search).get('mode') || store('pred.mode') || 'demo',
   selected: null,
@@ -26,7 +36,7 @@ const ui = {
 // ---------- connection ----------
 function connect() {
   ui.es?.close();
-  const q = new URLSearchParams({ mode: ui.mode });
+  const q = new URLSearchParams({ mode: ui.mode, sid });
   if (ui.selected) q.set('event', ui.selected);
   ui.es = new EventSource(`/api/stream?${q}`);
   ui.es.onmessage = (m) => render(JSON.parse(m.data));
@@ -41,6 +51,7 @@ function setMode(mode) {
   ui.revIndex = null;
   store('pred.mode', mode);
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  $('signalsLink').href = `/api/signals?mode=${mode}&sid=${sid}`;
   connect();
 }
 
@@ -76,10 +87,11 @@ function renderStatus(s) {
   $('statusRow').innerHTML = `
     <span class="pill"><span class="dot ${s.activeGhostEvents ? 'ghost' : 'ok'}"></span>PRED <b>${s.activeGhostEvents ? 'INVESTIGATING' : 'MONITORING'}</b></span>
     <span class="pill"><span class="dot ${mk.usMarketOpen ? 'ok' : 'closed'}"></span><b>${esc(mk.label)}</b> · ${esc(human(mk.session))} · <span class="num">${esc(mk.nyTime)}</span>${nextOpen}</span>
-    <span class="pill">Monitored <b class="num">${s.monitored.length}</b></span>
-    <span class="pill">Active Ghost Events <b class="num">${s.activeGhostEvents}</b></span>
-    <span class="pill" title="${esc(feed.note || feed.error || '')}"><span class="dot ${feedDot}"></span>Market data: <b>${s.mode === 'live' ? 'Bitget spot API' : 'Simulated tape'}</b> ${provTag(feed.provenance)}${s.mode === 'live' && feed.status !== 'connected' ? ` <span class="muted">${esc(feed.status === 'error' ? 'unreachable' : feed.status)}</span>` : ''}</span>
-    <span class="pill" title="Narratives only; probabilities come from PRED's scoring model">Analyst: <b>${s.analyst.enabled ? esc(s.analyst.model) : 'template'}</b></span>`;
+    <span class="pill">Active Ghost Events <b class="num">${s.activeGhostEvents}</b> / ${s.monitored.length} monitored</span>
+    <span class="pill" title="${esc(feed.note || feed.error || '')}"><span class="dot ${feedDot}"></span><b>${s.mode === 'live' ? 'Bitget' : 'Simulated tape'}</b> ${provTag(feed.provenance)}${s.mode === 'live' && feed.status !== 'connected' ? ` <span class="muted">${esc(feed.status === 'error' ? 'unreachable' : feed.status)}</span>` : ''}</span>`;
+  $('sideFeed').innerHTML = `<div style="display:flex;align-items:center;gap:6px"><span class="dot ${feedDot}"></span><b>${s.mode === 'live' ? 'Bitget spot API v2' : 'Simulated tape'}</b></div>
+    <div>${esc(s.mode === 'live' ? (feed.status === 'connected' ? `${Object.keys(feed.symbols || {}).length} symbols live` : feed.error || feed.status) : 'Deterministic demo data, labeled SIMULATED')}</div>
+    <div style="margin-top:4px">Analyst: ${s.analyst.enabled ? esc(s.analyst.model) : 'template narratives'}</div>`;
 }
 
 function renderAssets(s) {
@@ -103,8 +115,8 @@ function renderDemo(s) {
   bar.hidden = s.mode !== 'demo' || !s.demo;
   if (bar.hidden) return;
   const d = s.demo;
-  $('demoSteps').innerHTML = d.steps.map((st, i) => `<span class="st ${st.done ? 'done' : ''} ${st.active ? 'active' : ''}" title="${esc(st.title)}">${i + 1}</span>`).join('');
-  $('demoNarration').innerHTML = d.current ? `<b>${d.step + 1}. ${esc(d.current.title)}</b> — ${esc(d.current.narration)}` : `<b>${esc(d.scenario)}</b> — deterministic replay of a full Ghost Event lifecycle. Press <b>Next step</b> or <b>Auto-play</b>.`;
+  $('demoSteps').innerHTML = d.steps.map((st, i) => `<span class="st ${st.done ? 'done' : ''} ${st.active ? 'active' : ''}" title="${i + 1}. ${esc(st.title)}"><span>${i + 1}/${d.total} · ${esc(st.title)}</span></span>`).join('');
+  $('demoNarration').innerHTML = d.current ? `<b>${esc(d.current.title)}</b> — ${esc(d.current.narration)}` : `<b>${esc(d.scenario)}</b> — a replay of a full Ghost Event lifecycle, the same every time. Press <b>Start demo</b> or <b>Auto-play</b>.`;
   const done = d.step >= d.total - 1;
   $('btnNext').disabled = d.busy || done;
   $('btnNext').textContent = d.busy ? 'Working…' : done ? 'Complete' : d.step < 0 ? 'Start demo →' : 'Next step →';
@@ -143,9 +155,11 @@ function renderHero(s) {
   if (!e) {
     const mem = s.memory;
     el.innerHTML = `<div class="hero-empty">
-      <div class="big">Traditional markets close.<br/>Information doesn't. <span>PRED watches the gap.</span></div>
-      <p>PRED monitors tokenized U.S. equities around the clock. When one moves abnormally while the U.S. market is closed and no public catalyst explains it, PRED opens a <b>Ghost Event</b>. It then investigates, forms competing catalyst hypotheses, tracks them until they are confirmed or invalidated, estimates the market reaction, and learns from the outcome.</p>
-      <p class="muted">DETECT → INVESTIGATE → HYPOTHESIZE → VERIFY → PREDICT → LEARN${mem ? ` · ${mem.total} events in memory` : ''}</p>
+      <div class="eyebrow">Traditional markets close. Information doesn't.</div>
+      <div class="big">PRED watches <span>the gap.</span></div>
+      <p>${s.mode === 'live' ? 'PRED is watching Bitget tokenized equities. When one moves abnormally while the U.S. market is closed and no public catalyst explains it, a <b>Ghost Event</b> opens here.' : 'Press <b>Start demo</b> to replay a simulated NVDAx Ghost Event on a Sunday evening, from detection through confirmation, reaction and learning.'}</p>
+      <div class="loop"><span>Detect</span><span>Investigate</span><span>Hypothesize</span><span>Verify</span><span>Predict</span><span>Learn</span></div>
+      ${mem ? `<p class="muted" style="margin-top:14px">${mem.total} events in PRED Memory</p>` : ''}
     </div>`;
     return;
   }
@@ -153,7 +167,7 @@ function renderHero(s) {
   const rev = e.revisions.at(-1);
   const resolved = ['CONFIRMED', 'INVALIDATED', 'UNRESOLVED'].includes(e.state);
   const stepIdx = resolved ? 4 : LIFE.indexOf(e.state);
-  const segCls = (i) => (i > stepIdx ? '' : i === 4 && e.state === 'INVALIDATED' ? 'bad' : i === 4 && e.state === 'UNRESOLVED' ? 'unres' : 'on');
+  const segCls = (i) => (i > stepIdx ? '' : i === 4 && e.state === 'INVALIDATED' ? 'on bad' : i === 4 && e.state === 'UNRESOLVED' ? 'on unres' : 'on');
   const catalyst = e.resolution?.actualCategory ? human(e.resolution.actualCategory) : 'UNKNOWN';
   const active = !resolved;
   const r = e.resolution;
@@ -161,28 +175,27 @@ function renderHero(s) {
   if (r) {
     const ev = e.evidence.find((x) => x.id === r.confirmingEvidenceId);
     const cls = r.outcome === 'CONFIRMED' ? '' : r.outcome === 'INVALIDATED' ? 'bad' : 'unres';
-    const head = r.outcome === 'CONFIRMED' ? `<div class="headline good">✓ CATALYST CONFIRMED — ${esc(human(r.actualCategory))}</div>` : r.outcome === 'INVALIDATED' ? `<div class="headline bad">✗ HYPOTHESIS INVALIDATED — actual: ${esc(human(r.actualCategory))}</div>` : `<div class="headline">UNRESOLVED — no authoritative evidence by the horizon</div>`;
+    const head = r.outcome === 'CONFIRMED' ? `<div class="headline good">✓ Catalyst confirmed — ${esc(human(r.actualCategory).toLowerCase())}</div>` : r.outcome === 'INVALIDATED' ? `<div class="headline bad">✗ Hypothesis invalidated — actual cause: ${esc(human(r.actualCategory).toLowerCase())}</div>` : `<div class="headline">Unresolved — no authoritative evidence by the horizon</div>`;
     confirm = `<div class="confirm-box ${cls}">${head}
       <div><div class="lbl">Original hypothesis</div><div>${esc(r.originalHypothesis.title)} <b class="num">${r.originalHypothesis.probability}%</b></div><div class="muted">revision 1 · ${etFull(e.revisions[0].at)}</div></div>
       <div><div class="lbl">${r.outcome === 'UNRESOLVED' ? 'Leading hypothesis' : 'Confirming evidence'}</div><div>${ev ? `${esc(ev.title)} ${provTag(ev.provenance)}` : esc(r.judgedHypothesis.title)}</div><div class="muted">${esc(human(r.basis))}</div></div>
-      <div><div class="lbl">Detection → ${r.outcome === 'UNRESOLVED' ? 'horizon' : 'confirmation'}</div><div class="num" style="font-size:20px;font-weight:700">${dur(r.timeToResolutionMs)}</div><div class="muted">${etFull(e.detectedAt)} → ${etFull(r.resolvedAt)}</div></div>
+      <div><div class="lbl">Detection → ${r.outcome === 'UNRESOLVED' ? 'horizon' : 'confirmation'}</div><div class="big-num">${dur(r.timeToResolutionMs)}</div><div class="muted">${etFull(e.detectedAt)} → ${etFull(r.resolvedAt)}</div></div>
     </div>`;
   }
   el.innerHTML = `<div class="hero-grid">
     <div class="ghost-card">
-      <div class="ghost-title"><span class="dot ${active ? 'ghost' : 'ok'}" style="width:8px;height:8px;border-radius:50%;display:inline-block"></span>${esc(e.code)} ${provTag(e.provenance)}</div>
+      <div class="ghost-title"><span class="dot ${active ? 'ghost' : 'ok'}"></span>${esc(e.code)} ${provTag(e.provenance)}</div>
       <div class="ghost-ticker">${esc(e.ticker)}</div>
       <div class="ghost-move"><span class="${pctClass(m.retPct)}">${pct(m.retPct)}</span><span class="vol">Volume ${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}%</span></div>
       <dl class="kv">
-        <dt>Market status</dt><dd style="color:var(--serious)">${esc(e.market.label)}</dd>
+        <dt>Market status</dt><dd><span class="closed-badge">${esc(e.market.label)}</span></dd>
         <dt>Catalyst</dt><dd>${esc(catalyst)}</dd>
         <dt>PRED confidence</dt><dd>${rev ? `${rev.primary.probability}% <span class="muted" style="font-weight:400">${esc(CAT[rev.primary.key].short.toLowerCase())}</span>` : '—'}</dd>
-        <dt>Status</dt><dd class="state-chip" style="color:var(--accent)">${esc(human(e.state))}</dd>
+        <dt>Status</dt><dd><span class="state-badge ${esc(e.state)}">${esc(human(e.state))}</span></dd>
         <dt>Anomaly</dt><dd>${m.priceZ.toFixed(1)}σ · ${esc(m.severity)} · spread ${m.spread ? `${m.spread.ratio.toFixed(1)}×` : 'n/a'}</dd>
         <dt>Detected</dt><dd>${etFull(e.detectedAt)}</dd>
       </dl>
-      <div class="lifecycle">${LIFE.map((_, i) => `<div class="seg ${segCls(i)}"></div>`).join('')}</div>
-      <div class="lifecycle-labels"><span>DETECT</span><span>INVESTIGATE</span><span>HYPOTHESIZE</span><span>AWAIT</span><span>RESOLVE</span></div>
+      <div class="stepper">${['Detect', 'Investigate', 'Hypothesis', 'Await', 'Resolve'].map((l, i) => `<div class="s ${segCls(i)}"><i>${i <= stepIdx ? (segCls(i).includes('bad') ? '✕' : '✓') : ''}</i>${l}</div>`).join('')}</div>
     </div>
     <div class="hero-chart">
       <div class="chart-head"><h3>${esc(e.ticker)} · 1-minute closes (ET)</h3><span class="muted">${esc(e.asset.symbol || '')}</span></div>
@@ -314,7 +327,7 @@ function renderAction(e, s) {
   const code = e?.action?.code || 'MONITOR';
   el.innerHTML = `<div class="action-row">${['MONITOR', 'WAIT', 'RESEARCH', 'CONSIDER_TRADE'].map((a) => `<span class="act ${a} ${a === code ? 'on' : ''}">${human(a)}</span>`).join('')}</div>
     <div class="action-reason">${esc(e?.action?.reason || 'No active event — keep monitoring.')}</div>
-    <div class="disclaimer">A <b>CONSIDER TRADE</b> posture is published at <a href="/api/signals?mode=${s.mode}" target="_blank" style="color:var(--accent)">/api/signals</a> for a separate execution agent (e.g. on Bitget Agent Hub) that must enforce its own risk controls. PRED never places orders.</div>`;
+    <div class="disclaimer">A <b>CONSIDER TRADE</b> posture is published at <a href="/api/signals?mode=${s.mode}&sid=${sid}" target="_blank">/api/signals</a> for a separate execution agent (e.g. on Bitget Agent Hub) that must enforce its own risk controls. PRED never places orders.</div>`;
 }
 
 function renderMemory(s) {
@@ -363,7 +376,7 @@ function renderMemory(s) {
       ${m.recent
         .map((r) => {
           const mk = (v) => (v == null ? '<span class="na-t">—</span>' : v ? '<span class="ok-t">✓</span>' : '<span class="no-t">✗</span>');
-          return `<tr class="${r.id === hl ? 'hl' : ''}"><td>${esc(r.code)}</td><td>${esc(r.ticker)}</td><td>${r.initialPrimary ? `${esc(CAT[r.initialPrimary.key].short)} ${r.initialPrimary.probability}%` : '—'}</td><td>${r.actualCategory ? esc(CAT[r.actualCategory].short) : '<span class="na-t">unknown</span>'}</td><td>${r.predicted ? `${pct(r.predicted.est)} <span class="muted">[${pct(r.predicted.lo, 1)}, ${pct(r.predicted.hi, 1)}]</span>` : '<span class="na-t">—</span>'}</td><td class="${pctClass(r.actual)}">${pct(r.actual)}</td><td>${mk(r.evaluation.directionCorrect)}</td><td>${mk(r.evaluation.withinRange)}</td><td>${mk(r.evaluation.catalystCorrect)}</td><td class="muted">${r.evaluation.failures.map((f) => FAILURE_LABEL[f]).join(', ') || '—'}</td><td>${provTag(r.provenance)}</td></tr>`;
+          return `<tr class="${r.id === hl ? 'hl' : ''}"><td class="m">${esc(r.code.replace('GHOST EVENT ', ''))}</td><td><b>${esc(r.ticker)}</b></td><td>${r.initialPrimary ? `${esc(CAT[r.initialPrimary.key].short)} ${r.initialPrimary.probability}%` : '—'}</td><td>${r.actualCategory ? esc(CAT[r.actualCategory].short) : '<span class="na-t">unknown</span>'}</td><td>${r.predicted ? `${pct(r.predicted.est)} <span class="muted">[${pct(r.predicted.lo, 1)}, ${pct(r.predicted.hi, 1)}]</span>` : '<span class="na-t">—</span>'}</td><td class="m ${pctClass(r.actual)}">${pct(r.actual)}</td><td>${mk(r.evaluation.directionCorrect)}</td><td>${mk(r.evaluation.withinRange)}</td><td>${mk(r.evaluation.catalystCorrect)}</td><td class="muted">${r.evaluation.failures.map((f) => FAILURE_LABEL[f]).join(', ') || '—'}</td><td>${provTag(r.provenance)}</td></tr>`;
         })
         .join('')}
     </tbody></table>`;
@@ -384,7 +397,7 @@ function spotlight(s) {
 
 // ---------- controls ----------
 document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-const post = (p) => fetch(p, { method: 'POST' });
+const post = (p) => fetch(`${p}${p.includes('?') ? '&' : '?'}sid=${sid}`, { method: 'POST' });
 $('btnNext').addEventListener('click', () => {
   $('btnNext').disabled = true;
   post('/api/demo/next');
@@ -404,6 +417,22 @@ let rt;
 window.addEventListener('resize', () => {
   clearTimeout(rt);
   rt = setTimeout(() => ui.snap && render(ui.snap), 150);
+});
+
+// Sidebar: highlight the section in view.
+const navLinks = [...document.querySelectorAll('.side-nav a')];
+const io = new IntersectionObserver(
+  (entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#${en.target.id}`));
+    }
+  },
+  { rootMargin: '-35% 0px -60% 0px' },
+);
+navLinks.forEach((a) => {
+  const t = document.querySelector(a.getAttribute('href'));
+  if (t) io.observe(t);
 });
 
 setMode(ui.mode);

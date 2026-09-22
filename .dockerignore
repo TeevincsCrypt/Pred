@@ -1,3 +1,4 @@
 node_modules
 data/*.json
 .git
+!data/calendar.example.json
