@@ -46,6 +46,7 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     feedProvenance: 'LIVE',
     rescanIntervalMs: config.rescanIntervalMs,
     resolutionTimeoutMs: config.resolutionTimeoutMs,
+    openDeadlineMs: config.openDeadlineMs,
     tradability: (key) => market.tokenizedStatus(key),
     persist: { saveEvent: (e) => store.saveEvent(e), appendLog: (id, kind, entry) => store.appendLog(id, kind, entry) },
   });

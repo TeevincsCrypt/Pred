@@ -103,7 +103,7 @@ Evidence of one kind has diminishing returns, so 30 headlines about a mega-cap c
 The **Verifier** re-checks open events every 5 minutes. It re-runs SEC and GDELT and checks whether the price held or reverted at +60 and +180 minutes.
 - An official company release or an 8-K/6-K → **CONFIRMED**, or **INVALIDATED** if a different catalyst had been leading.
 - A full reversal that turns the model toward a liquidity explanation → **INVALIDATED**.
-- No authoritative evidence by the first regular-session close (or `PRED_VERIFY_TIMEOUT_MS`) → **UNRESOLVED**.
+- No authoritative evidence by 30 minutes after the next U.S. open (`PRED_OPEN_GRACE_MS`) → **UNRESOLVED**, noting whether the move held or faded into the open. The price reaction is still measured at the U.S. close and scored in PRED Memory.
 
 PRED never forces a confirmation.
 
@@ -168,6 +168,7 @@ The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessi
 | `PRED_ASSET_REFRESH_MS` | 900000 | instrument discovery cadence |
 | `PRED_MIN_TURNOVER_USD` | 5000 | below this 24h turnover a market is "thin" and anomalies are not Ghost Events |
 | `PRED_VERIFY_TIMEOUT_MS` | – | optional earlier UNRESOLVED timeout |
+| `PRED_OPEN_GRACE_MS` | `1800000` | verification closes this long after the next U.S. open; `off` waits for the close |
 | `SEC_USER_AGENT` | – | **required for SEC**: `"Your Name you@example.com"` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – | optional analyst |
 | `PRED_DB_PATH` | `data/pred.sqlite` | put it on a persistent volume |

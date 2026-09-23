@@ -237,6 +237,8 @@ function renderHero(s) {
         <dt>Status</dt><dd><span class="state-badge ${esc(e.state)}">${esc(human(e.state))}</span></dd>
         <dt>Anomaly</dt><dd>${m.priceZ.toFixed(1)}σ · ${esc(m.severity)} · spread ${m.spread ? `${m.spread.ratio.toFixed(1)}×` : 'n/a'}</dd>
         <dt>Detected</dt><dd>${etFull(e.detectedAt)}</dd>
+        ${e.state === 'AWAITING_CONFIRMATION' && e.verifyDeadlineAt ? `<dt>Verification closes</dt><dd>${etFull(e.verifyDeadlineAt)} <span class="muted" style="font-weight:400">US open + ${Math.round((e.verifyDeadlineAt - e.nextOpenAt) / 60000)}m</span></dd>` : ''}
+        ${e.resolution?.basis === 'open-deadline' && e.resolution.moveAtOpenPct != null ? `<dt>Move at US open</dt><dd><span class="${pctClass(e.resolution.moveAtOpenPct)}">${pct(e.resolution.moveAtOpenPct)}</span> <span class="muted" style="font-weight:400">${e.resolution.moveHeld ? 'held' : 'faded'}</span></dd>` : ''}
       </dl>
       <div class="stepper">${['Detect', 'Investigate', 'Hypothesis', 'Await', 'Resolve'].map((l, i) => `<div class="s ${segCls(i)}"><i>${i <= stepIdx ? (segCls(i).includes('bad') ? '✕' : '✓') : ''}</i>${l}</div>`).join('')}</div>
     </div>
