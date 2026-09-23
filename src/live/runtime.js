@@ -125,11 +125,13 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     const secStatus0 = !sec.configured ? 'not_configured' : sec.health.status !== 'unknown' ? sec.health.status : probes.sec?.status === 'ok' ? 'connected' : probes.sec?.status || 'unknown';
     const gdeltStatus0 = news.health.status !== 'unknown' ? news.health.status : probes.gdelt?.status === 'ok' ? 'connected' : probes.gdelt?.status || 'unknown';
     const secStatus = intermittent(secStatus0, sec.health);
-    const gdeltStatus = intermittent(gdeltStatus0, news.health);
+    const bo = news.backoff?.() || {};
+    // Early backoff pauses are deliberate (DEGRADED); repeated refusals mean a real block.
+    const gdeltStatus = bo.paused && bo.strikes <= 4 ? 'degraded' : intermittent(gdeltStatus0, news.health);
     return {
       bitget: { name: 'Bitget', status: label(client.health.status), detail: client.health.lastError || `${market.assets.length} RWA instruments · ${client.baseUrl}`, ...h(client.health) },
       sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : secStatus === 'degraded' ? degradedNote(sec.health) : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
-      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
+      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: bo.paused ? news.health.lastError : gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
       claude: { name: claude.enabled ? `AI analyst · ${claude.providerName || 'Claude'}` : 'AI analyst', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null, provider: claude.provider || null },
       execution: (() => {
         const t = trading.status();

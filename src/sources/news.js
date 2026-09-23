@@ -35,8 +35,46 @@ const canonical = (u) => {
 };
 const titleKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-export function createNewsSource({ fetchImpl = fetch, timespan = '24h' } = {}) {
-  const http = createHttp({ name: 'gdelt', minIntervalMs: 6000, timeoutMs: 15000, retries: 1, baseBackoffMs: 10_000, fetchImpl, cacheTtlMs: 10 * 60_000 });
+// GDELT's DOC index refreshes every 15 minutes, so asking more often adds load
+// without adding news. Shared cloud IPs get blocked when hammered, so PRED
+// (1) caches each company query for 15 min, (2) never retries into a 429 and
+// instead pauses all GDELT calls with exponential backoff (1, 2, 4 … 30 min),
+// and (3) keeps at most a few requests waiting, skipping the rest until the
+// next rescan rather than queueing requests whose callers already gave up.
+const CACHE_MS = 15 * 60_000;
+const MAX_WAITING = 4;
+
+export function createNewsSource({ fetchImpl = fetch, timespan = '24h', now = () => Date.now() } = {}) {
+  const http = createHttp({ name: 'gdelt', minIntervalMs: 6000, timeoutMs: 15000, retries: 0, fetchImpl, cacheTtlMs: CACHE_MS });
+  const cache = new Map();
+  const guard = { pausedUntil: 0, strikes: 0, waiting: 0 };
+  const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
+  const unavailable = (msg) => Object.assign(new Error(msg), { gdeltSkipped: true });
+
+  async function fetchNews(url) {
+    const hit = cache.get(url);
+    if (hit && now() - hit.at < CACHE_MS) return hit.body;
+    if (now() < guard.pausedUntil) throw unavailable(`GDELT paused after rate limiting — retrying after ${hhmm(guard.pausedUntil)} UTC`);
+    if (guard.waiting >= MAX_WAITING) throw unavailable('GDELT busy — news re-checked on the next rescan');
+    guard.waiting++;
+    try {
+      const body = await http.getJson(url, { cacheTtlMs: 0 });
+      guard.strikes = 0;
+      cache.set(url, { at: now(), body });
+      if (cache.size > 500) cache.delete(cache.keys().next().value);
+      return body;
+    } catch (err) {
+      if (/429|rate limited|timeout|no response/i.test(String(err.message))) {
+        guard.strikes++;
+        const pauseMs = Math.min(30 * 60_000, 60_000 * 2 ** (guard.strikes - 1));
+        guard.pausedUntil = now() + pauseMs;
+        http.health.lastError = `rate limited by GDELT — paused until ${hhmm(guard.pausedUntil)} UTC (backoff ${Math.round(pauseMs / 60_000)} min)`;
+      }
+      throw err;
+    } finally {
+      guard.waiting--;
+    }
+  }
 
   function query(terms) {
     // GDELT rejects parentheses around a single term ("Parentheses may only
@@ -52,16 +90,25 @@ export function createNewsSource({ fetchImpl = fetch, timespan = '24h' } = {}) {
     category: 'news',
     provenance: 'LIVE',
     health: http.health,
+    // For the status panel: intentional backoff vs a persistent block.
+    backoff: () => ({ paused: now() < guard.pausedUntil, pausedUntil: guard.pausedUntil || null, strikes: guard.strikes }),
 
     async probe() {
-      const body = await http.getJson(query(['stock market']), { cacheTtlMs: 15 * 60_000 });
+      if (now() < guard.pausedUntil) return { status: 'ok', note: `paused after rate limiting until ${hhmm(guard.pausedUntil)} UTC` };
+      const body = await fetchNews(query(['stock market']));
       return { status: 'ok', note: `${(body.articles || []).length} articles in probe` };
     },
 
     async collect({ asset, now }) {
       const terms = (asset.newsTerms || []).filter((t) => t && t.length >= 3);
       if (!terms.length) return { status: 'ok', note: `no search terms for ${asset.ticker}`, evidence: [] };
-      const body = await http.getJson(query(terms));
+      let body;
+      try {
+        body = await fetchNews(query(terms));
+      } catch (err) {
+        if (err.gdeltSkipped) return { status: 'unavailable', note: err.message, evidence: [] };
+        throw err;
+      }
       if (body && typeof body === 'object' && !('articles' in body) && Object.keys(body).length) return { status: 'unavailable', note: 'GDELT response missing articles', evidence: [] };
       const seenUrl = new Set();
       const seenTitle = new Set();
