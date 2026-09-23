@@ -41,8 +41,10 @@ export function createBitgetMock({ spikeSymbol = null, spikePct = 0, gdelt = { a
     if (failBitget) throw new TypeError('fetch failed');
     const q = Object.fromEntries(u.searchParams);
     switch (u.pathname) {
-      case '/api/v3/public/time':
+      case '/api/v2/public/time':
         return res(envelope({ serverTime: String(Date.now()) }));
+      case '/api/v3/public/time': // mirrors the live API, which does not serve this path
+        return res({ code: '40404', msg: 'Request URL NOT FOUND', data: null });
       case '/api/v3/market/instruments':
         return res(envelope(q.category === 'USDT-FUTURES' ? FUTURES_INSTRUMENTS : SPOT_INSTRUMENTS));
       case '/api/v3/market/tickers': {

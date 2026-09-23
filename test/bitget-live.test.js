@@ -19,6 +19,7 @@ test('v3 client parses the documented envelope and candle arrays', async () => {
   assert.equal(t.last, 180);
   assert.ok(Math.abs(t.change24hPct - 1.01) < 1e-9);
   assert.equal(c.health.status, 'connected');
+  assert.ok((await c.serverTime()) > 0, 'server time comes from /api/v2/public/time');
 });
 
 test('missing or malformed fields become null, never invented', () => {

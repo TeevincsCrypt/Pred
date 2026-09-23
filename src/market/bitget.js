@@ -1,6 +1,6 @@
 // Bitget public market-data client — Unified (v3) market API, no API key.
 //
-//   GET /api/v3/public/time
+//   GET /api/v2/public/time (v3's /public/time answers 40404 in production)
 //   GET /api/v3/market/instruments?category=SPOT|USDT-FUTURES[&symbol=]
 //   GET /api/v3/market/tickers?category=SPOT|USDT-FUTURES[&symbol=]
 //   GET /api/v3/market/candles?category=&symbol=&interval=1m&limit=
@@ -36,8 +36,14 @@ export function createBitgetClient({ fetchImpl = fetch, baseUrl = BITGET_BASE_UR
     health: http.health,
 
     async serverTime() {
-      const d = await get('/api/v3/public/time');
-      return num(d?.serverTime);
+      // Bitget's live API answers /api/v3/public/time with 40404 "Request URL
+      // NOT FOUND", so use the long-standing v2 endpoint, falling back to v3.
+      try {
+        return num((await get('/api/v2/public/time'))?.serverTime);
+      } catch (err) {
+        if (!(err instanceof BitgetError)) throw err;
+        return num((await get('/api/v3/public/time'))?.serverTime);
+      }
     },
 
     async instruments(category = 'SPOT') {

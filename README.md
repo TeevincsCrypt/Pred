@@ -37,7 +37,7 @@ PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is used on
 
 | Purpose | Endpoint |
 |---|---|
-| Server time / connectivity | `GET /api/v3/public/time` |
+| Server time / connectivity | `GET /api/v2/public/time` (v3 `/public/time` returns 40404 on the live API) |
 | Instrument discovery + metadata + trading status | `GET /api/v3/market/instruments?category=SPOT` and `?category=USDT-FUTURES` |
 | Ticker: last price, 24h change, 24h volume & turnover, best bid/ask (spread) | `GET /api/v3/market/tickers?category=SPOT` / `?category=USDT-FUTURES` (every ticker in one call) |
 | 1-minute candles (K-lines) | `GET /api/v3/market/candles?category=&symbol=&interval=1m&limit=` |
