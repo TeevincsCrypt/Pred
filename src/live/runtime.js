@@ -69,6 +69,11 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     await claude.probe?.();
   }
 
+  // Once a source is answering again, show its current state rather than a
+  // stale error left over from an earlier failed probe.
+  const okNote = (h, probe) =>
+    [probe?.status === 'ok' ? probe.note : null, h.lastOkAt ? `last OK ${new Date(h.lastOkAt).toISOString().slice(11, 19)} UTC` : null, h.rateLimited ? `${h.rateLimited} rate-limited replies (backing off)` : null].filter(Boolean).join(' · ') || null;
+
   function connections() {
     const h = (x) => ({ lastOkAt: x.lastOkAt, lastErrorAt: x.lastErrorAt, lastError: x.lastError, latencyMs: x.lastLatencyMs, requests: x.requests, rateLimited: x.rateLimited });
     let dbh;
@@ -81,8 +86,8 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     const gdeltStatus = news.health.status !== 'unknown' ? news.health.status : probes.gdelt?.status === 'ok' ? 'connected' : probes.gdelt?.status || 'unknown';
     return {
       bitget: { name: 'Bitget', status: label(client.health.status), detail: client.health.lastError || `${market.assets.length} RWA instruments · ${client.baseUrl}`, ...h(client.health) },
-      sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : sec.health.lastError || probes.sec?.note || null, ...h(sec.health) },
-      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: news.health.lastError || probes.gdelt?.note || null, ...h(news.health) },
+      sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
+      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
       claude: { name: 'Claude', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null },
       database: { name: 'Database', status: label(dbh.status), detail: dbh.error || `SQLite ${dbh.file}`, counts: dbh.counts, persistentDisk: process.env.RAILWAY_VOLUME_MOUNT_PATH ? `volume at ${process.env.RAILWAY_VOLUME_MOUNT_PATH}` : process.env.RAILWAY_ENVIRONMENT ? 'WARNING: no Railway volume — data is lost on redeploy' : 'local disk' },
     };
