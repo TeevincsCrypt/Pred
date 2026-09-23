@@ -79,3 +79,11 @@ document.querySelectorAll('.section .wrap > *, .cta-in > *').forEach((el) => {
 });
 
 load();
+
+// Show the demo button only when this deployment serves /demo.
+fetch('/api/status')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((st) => {
+    if (st?.demoEnabled) $('demoCta').hidden = false;
+  })
+  .catch(() => {});

@@ -219,12 +219,13 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
 
       // ---------- pages & static ----------
       let rel;
-      if (p === '/' || p === '/app') rel = config.mode === 'live' ? 'app.html' : 'app.html';
+      // "/" is the landing page; the live dashboard is at /app.
+      if (p === '/' || p === '/about') rel = 'index.html';
+      else if (p === '/app') rel = 'app.html';
       else if (p === '/demo') {
         if (!demos) return json(res, 404, { error: 'demo disabled in this deployment' });
         rel = 'app.html';
-      } else if (p === '/about') rel = 'index.html';
-      else rel = p.slice(1);
+      } else rel = p.slice(1);
       const file = path.normalize(path.join(WEB, rel));
       if (!file.startsWith(WEB + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'not found' });
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', ...SECURITY_HEADERS });
