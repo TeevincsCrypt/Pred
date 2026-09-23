@@ -62,6 +62,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Stop iOS Safari from auto-enlarging text in dense panels (feed, agent log). */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: var(--bg); color: var(--text-primary); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 button { font: inherit; color: inherit; cursor: pointer; }
