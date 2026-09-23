@@ -83,7 +83,7 @@ function render(snap) {
   spotlight(snap);
 }
 
-const CONN_DOT = { CONNECTED: 'ok', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
+const CONN_DOT = { CONNECTED: 'ok', DEGRADED: 'warn', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
 const ago = (t, now) => (t ? `${dur(Math.max(0, now - t)).replace(/^0m$/, '<1m')} ago` : 'never');
 
 function renderLiveStatus(s) {
