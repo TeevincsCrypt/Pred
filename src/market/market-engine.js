@@ -43,6 +43,7 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
         client.tickers('SPOT').catch(() => []),
       ]);
       for (const t of spotTickers) tickers.set(t.symbol, t);
+      if (futures.length) for (const t of await client.tickers('USDT-FUTURES').catch(() => [])) tickers.set(`${t.symbol}:PERP`, t);
       const dir = await secDirectory().catch(() => null);
       const built = buildUniverse({ spot, futures, tickers, relationships, secDirectory: dir, opts: { assetsFilter: config.assets, maxAssets: config.maxAssets, categories: config.categories } });
       assets = built.assets;
@@ -77,7 +78,9 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
       const list = await client.tickers('SPOT');
       const at = Date.now();
       for (const t of list) tickers.set(t.symbol, { ...t, receivedAt: at });
-      if (config.categories.includes('USDT-FUTURES')) {
+      // Futures tickers are always polled (one request) so every discovered
+      // stock perpetual shows a real price in /api/assets.
+      if (assets.some((x) => x.category === 'USDT-FUTURES')) {
         for (const t of await client.tickers('USDT-FUTURES').catch(() => [])) tickers.set(`${t.symbol}:PERP`, { ...t, receivedAt: at });
       }
       const map = keyToSymbol();
@@ -137,7 +140,7 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
     if (age > config.staleAfterMs) return { status: 'UNKNOWN', reason: `last closed candle ${Math.round(age / MIN)}m old` };
     const recent = bars.slice(-15);
     if (!recent.some((b) => b.volume > 0)) return { status: 'CLOSED', reason: 'no trades in the last 15 minutes' };
-    const t = tickers.get(a.symbol);
+    const t = tickers.get(a.category === 'USDT-FUTURES' ? `${a.symbol}:PERP` : a.symbol);
     if (config.minTurnoverUsd > 0 && t?.turnover24h != null && t.turnover24h < config.minTurnoverUsd) return { status: 'LIVE', thin: true, reason: `24h turnover ${Math.round(t.turnover24h)} < ${config.minTurnoverUsd}` };
     return { status: 'LIVE', reason: 'trading, fresh candles' };
   }
