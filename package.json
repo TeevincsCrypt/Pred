@@ -12,7 +12,8 @@
     "check:live": "node --disable-warning=ExperimentalWarning scripts/check-live.mjs",
     "check:bitget": "node examples/check-bitget.mjs",
     "demo:cli": "node examples/demo-cli.mjs",
-    "build:pdfs": "node scripts/build-pdfs.mjs"
+    "build:pdfs": "node scripts/build-pdfs.mjs",
+    "record:walkthrough": "node scripts/record-walkthrough.mjs"
   },
   "engines": {
     "node": ">=22.5"

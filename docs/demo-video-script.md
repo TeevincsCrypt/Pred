@@ -16,3 +16,16 @@ Notes
 
 - If you show `/demo`, label it on screen as "Simulated demo".
 - Execution stays untested against real Bitget. Describe it only with the sentence above.
+
+## Silent screen recording (optional)
+
+`scripts/record-walkthrough.mjs` records a 1920×1080 silent walkthrough that follows this script. Add your voice in Clipchamp afterwards.
+
+```
+npm i -g playwright
+npx playwright install chromium
+node scripts/record-walkthrough.mjs https://<your-pred>.up.railway.app          # live dashboard
+node scripts/record-walkthrough.mjs https://<your-pred>.up.railway.app --demo   # simulated demo (needs PRED_DEMO_ENABLED=true)
+```
+
+The video is saved in `recordings/` (as .webm, plus .mp4 if ffmpeg is installed). The recorder only views pages. It never logs in, and never approves or executes a trade.
