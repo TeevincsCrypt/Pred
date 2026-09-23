@@ -20,6 +20,20 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
+// Shared by every analyst provider (Claude, Groq): the model sees only the
+// evidence PRED collected and the model's own probability estimates.
+export const ANALYST_SYSTEM =
+  'You are the analyst inside PRED, a market event-intelligence system for tokenized equities. Explain the leading catalyst hypothesis using ONLY the evidence listed. Cite evidence ids. Never invent facts, sources, or numbers. Probabilities are model confidence estimates; do not restate them as certainties.';
+export { SCHEMA as ANALYST_SCHEMA };
+export function analystPrompt(event, rev) {
+  const evidence = event.evidence
+    .filter((e) => !e.superseded)
+    .map((e) => `[${e.id}] (${e.provenance}) ${e.kind}: ${e.title} — ${e.detail || ''}`)
+    .join('\n');
+  const hyps = rev.hypotheses.map((h) => `${h.title}: ${h.probability}%`).join('\n');
+  return { system: ANALYST_SYSTEM, user: `Ghost Event ${event.code} on ${event.ticker} (${event.asset.company}).\n\nHypotheses (model estimates):\n${hyps}\n\nEvidence:\n${evidence}` };
+}
+
 export function templateNarrative(event, rev) {
   const p = rev.hypotheses[0];
   const s = rev.hypotheses[1];
@@ -59,7 +73,7 @@ function describeError(err) {
 export function createAnalyst({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.ANTHROPIC_MODEL || process.env.PRED_CLAUDE_MODEL } = {}) {
   const enabled = !!(apiKey && model);
   const MODEL = model || null;
-  const status = { status: !apiKey ? 'not_configured' : !model ? 'not_configured' : 'unknown', note: !apiKey ? 'Optional — set ANTHROPIC_API_KEY and ANTHROPIC_MODEL' : !model ? 'ANTHROPIC_MODEL not set' : 'not checked yet', lastOkAt: null, lastError: null };
+  const status = { status: !apiKey ? 'not_configured' : !model ? 'not_configured' : 'unknown', note: !apiKey ? 'Optional — set GROQ_API_KEY + GROQ_MODEL (free) or ANTHROPIC_API_KEY + ANTHROPIC_MODEL' : !model ? 'ANTHROPIC_MODEL not set' : 'not checked yet', lastOkAt: null, lastError: null };
   let client = null;
   async function getClient() {
     if (client) return client;
@@ -68,6 +82,8 @@ export function createAnalyst({ apiKey = process.env.ANTHROPIC_API_KEY, model = 
     return client;
   }
   return {
+    provider: 'claude',
+    providerName: 'Claude',
     enabled,
     model: MODEL,
     status,
@@ -89,19 +105,14 @@ export function createAnalyst({ apiKey = process.env.ANTHROPIC_API_KEY, model = 
       if (!enabled) return fallback;
       try {
         const c = await getClient();
-        const evidence = event.evidence
-          .filter((e) => !e.superseded)
-          .map((e) => `[${e.id}] (${e.provenance}) ${e.kind}: ${e.title} — ${e.detail || ''}`)
-          .join('\n');
-        const hyps = rev.hypotheses.map((h) => `${h.title}: ${h.probability}%`).join('\n');
+        const { system, user } = analystPrompt(event, rev);
         const res = await c.messages.create({
           model: MODEL,
           // Current models think by default; leave room for thinking plus the JSON.
           max_tokens: 16000,
           output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
-          system:
-            'You are the analyst inside PRED, a market event-intelligence system for tokenized equities. Explain the leading catalyst hypothesis using ONLY the evidence listed. Cite evidence ids. Never invent facts, sources, or numbers. Probabilities are model confidence estimates; do not restate them as certainties.',
-          messages: [{ role: 'user', content: `Ghost Event ${event.code} on ${event.ticker} (${event.asset.company}).\n\nHypotheses (model estimates):\n${hyps}\n\nEvidence:\n${evidence}` }],
+          system,
+          messages: [{ role: 'user', content: user }],
         });
         if (res.stop_reason !== 'end_turn') {
           Object.assign(status, { status: 'connected', lastOkAt: Date.now(), note: `last request stopped: ${res.stop_reason}` });

@@ -27,7 +27,7 @@ npm test                  # node:test suites
 
 `/` is the landing page and `/app` opens **PRED LIVE**, the live dashboard. The simulated demo lives only at `/demo` and is **off** unless you set `PRED_DEMO_ENABLED=true` or run `npm run start:demo`.
 
-PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is used only when `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are set.
+PRED has no runtime dependencies. The AI analyst is optional: `@anthropic-ai/sdk` is used only when `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are set; the free Groq alternative uses plain HTTPS (`GROQ_API_KEY` + `GROQ_MODEL`).
 
 ---
 
@@ -125,7 +125,11 @@ LIVE MEMORY starts at **0 verified events**. Accuracy metrics (direction, cataly
 
 ### 8. Claude analyst (optional)
 
-Set `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, for example `claude-opus-5`. The model is validated against the Models API at startup and its real status appears in the Connections panel. Claude writes explanations only, citing evidence IDs. It never sets prices, confidence numbers, confirmations or trade decisions. Without it, PRED works fully on deterministic logic.
+Two interchangeable providers:
+- **Claude**: set `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, for example `claude-opus-5`.
+- **Groq (free tier)**: set `GROQ_API_KEY` and `GROQ_MODEL`, for example `openai/gpt-oss-120b`. PRED spaces requests (`PRED_GROQ_MIN_INTERVAL_MS`, default 4 s), caps them per day (`PRED_GROQ_DAILY_CAP`, default 800) and honours Groq's 429 `Retry-After`. While Groq is rate-limited it shows **DEGRADED** and events use the template narrative.
+
+Claude is used if both are configured; `PRED_ANALYST=groq` forces Groq. Models are never hard-coded: the configured model is checked against the provider's model list at startup, and its real status appears in the Connections panel as "AI analyst". Claude writes explanations only, citing evidence IDs. It never sets prices, confidence numbers, confirmations or trade decisions. Without it, PRED works fully on deterministic logic.
 
 ### 9. No autonomous trading
 
@@ -255,7 +259,10 @@ Every trade POST needs the session cookie, `X-PRED-CSRF` and a same-origin `Orig
 | `PRED_VERIFY_TIMEOUT_MS` | – | optional earlier UNRESOLVED timeout |
 | `PRED_OPEN_GRACE_MS` | `1800000` | verification closes this long after the next U.S. open; `off` waits for the close |
 | `SEC_USER_AGENT` | – | **required for SEC**: `"Your Name you@example.com"` |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – | optional analyst |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – | optional analyst (Claude) |
+| `GROQ_API_KEY`, `GROQ_MODEL` | – | optional analyst (Groq, free tier), e.g. `GROQ_MODEL=openai/gpt-oss-120b` |
+| `PRED_ANALYST` | auto | `claude` or `groq` to force a provider |
+| `PRED_GROQ_MIN_INTERVAL_MS`, `PRED_GROQ_DAILY_CAP` | `4000`, `800` | Groq free-tier budget |
 | `PRED_DB_PATH` | `data/pred.sqlite` | put it on a persistent volume |
 | `PRED_CALENDAR` | `data/calendar.json` | scheduled events you maintain |
 | `PRED_RELATIONSHIPS_FILE` | – | extend or override the peer map |
