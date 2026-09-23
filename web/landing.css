@@ -264,3 +264,5 @@ h2 { text-wrap: balance; font-size: clamp(28px, 3.6vw, 40px); line-height: 1.12;
 /* Brand logo (web/logo-mark.png) replaces the gradient tile */
 .mark.logo { background: none; box-shadow: none; border-radius: 0; }
 .mark.logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+[hidden] { display: none !important; }

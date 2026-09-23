@@ -60,6 +60,10 @@ test('live server: real-shaped discovery, market state, honest status, SSE, no s
     assert.equal(mem.accuracy.direction.rate, null, 'no accuracy without real history');
 
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/demo/state`)).status, 404, 'demo is off in live production');
+    const page = async (p) => (await fetch(`http://127.0.0.1:${port}${p}`)).text();
+    assert.match(await page('/'), /Find what the market knows/, '/ is the landing page');
+    assert.match(await page('/app'), /id="connList"/, '/app is the live dashboard');
+    assert.match(await page('/about'), /Find what the market knows/);
 
     const res = await fetch(`http://127.0.0.1:${port}/api/stream`);
     const reader = res.body.getReader();

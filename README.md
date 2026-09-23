@@ -25,7 +25,7 @@ npm run check:live        # production health check against the real endpoints
 npm test                  # 32 tests
 ```
 
-`/` opens straight into **PRED LIVE**. `/about` is the product page. The simulated demo lives only at `/demo` and is **off** unless you set `PRED_DEMO_ENABLED=true` or run `npm run start:demo`.
+`/` is the landing page and `/app` opens **PRED LIVE**, the live dashboard. The simulated demo lives only at `/demo` and is **off** unless you set `PRED_DEMO_ENABLED=true` or run `npm run start:demo`.
 
 PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is used only when `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are set.
 
