@@ -15,7 +15,7 @@ import { createUnavailableSource } from '../sources/unavailable.js';
 import { openDb } from '../store/db.js';
 import { logOp } from '../util/log.js';
 
-const label = (s) => ({ connected: 'CONNECTED', ok: 'CONNECTED', disconnected: 'DISCONNECTED', not_configured: 'NOT CONFIGURED', unknown: 'CHECKING' })[s] || String(s || 'UNKNOWN').toUpperCase();
+const label = (s) => ({ connected: 'CONNECTED', ok: 'CONNECTED', degraded: 'DEGRADED', disconnected: 'DISCONNECTED', not_configured: 'NOT CONFIGURED', unknown: 'CHECKING' })[s] || String(s || 'UNKNOWN').toUpperCase();
 
 export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analyst = null } = {}) {
   const store = db || openDb(config.dbPath);
@@ -74,6 +74,14 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
   const okNote = (h, probe) =>
     [probe?.status === 'ok' ? probe.note : null, h.lastOkAt ? `last OK ${new Date(h.lastOkAt).toISOString().slice(11, 19)} UTC` : null, h.rateLimited ? `${h.rateLimited} rate-limited replies (backing off)` : null].filter(Boolean).join(' · ') || null;
 
+  // A free source that fails one request but answered recently is DEGRADED
+  // (intermittent), not DISCONNECTED; DISCONNECTED means no answer for 30 min.
+  const DEGRADED_WINDOW_MS = 30 * 60_000;
+  const intermittent = (st, h) => (st === 'disconnected' && h.lastOkAt && Date.now() - h.lastOkAt < DEGRADED_WINDOW_MS ? 'degraded' : st);
+
+  const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
+  const degradedNote = (h) => `intermittent — last OK ${hhmm(h.lastOkAt)} UTC; last error ${hhmm(h.lastErrorAt)} UTC: ${h.lastError}`;
+
   function connections() {
     const h = (x) => ({ lastOkAt: x.lastOkAt, lastErrorAt: x.lastErrorAt, lastError: x.lastError, latencyMs: x.lastLatencyMs, requests: x.requests, rateLimited: x.rateLimited });
     let dbh;
@@ -82,12 +90,14 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     } catch (err) {
       dbh = { status: 'disconnected', error: err.message };
     }
-    const secStatus = !sec.configured ? 'not_configured' : sec.health.status !== 'unknown' ? sec.health.status : probes.sec?.status === 'ok' ? 'connected' : probes.sec?.status || 'unknown';
-    const gdeltStatus = news.health.status !== 'unknown' ? news.health.status : probes.gdelt?.status === 'ok' ? 'connected' : probes.gdelt?.status || 'unknown';
+    const secStatus0 = !sec.configured ? 'not_configured' : sec.health.status !== 'unknown' ? sec.health.status : probes.sec?.status === 'ok' ? 'connected' : probes.sec?.status || 'unknown';
+    const gdeltStatus0 = news.health.status !== 'unknown' ? news.health.status : probes.gdelt?.status === 'ok' ? 'connected' : probes.gdelt?.status || 'unknown';
+    const secStatus = intermittent(secStatus0, sec.health);
+    const gdeltStatus = intermittent(gdeltStatus0, news.health);
     return {
       bitget: { name: 'Bitget', status: label(client.health.status), detail: client.health.lastError || `${market.assets.length} RWA instruments · ${client.baseUrl}`, ...h(client.health) },
-      sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
-      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
+      sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : secStatus === 'degraded' ? degradedNote(sec.health) : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
+      gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
       claude: { name: 'Claude', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null },
       database: { name: 'Database', status: label(dbh.status), detail: dbh.error || `SQLite ${dbh.file}`, counts: dbh.counts, persistentDisk: process.env.RAILWAY_VOLUME_MOUNT_PATH ? `volume at ${process.env.RAILWAY_VOLUME_MOUNT_PATH}` : process.env.RAILWAY_ENVIRONMENT ? 'WARNING: no Railway volume — data is lost on redeploy' : 'local disk' },
     };
