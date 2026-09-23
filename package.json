@@ -1,7 +1,7 @@
 {
   "name": "pred",
   "version": "1.0.0",
-  "description": "PRED \u2014 Predictive Reaction Event Detector. 24/7 market event intelligence for tokenized equities.",
+  "description": "PRED — Predictive Reaction Event Detector. 24/7 market event intelligence for tokenized equities.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
     "check:live": "node --disable-warning=ExperimentalWarning scripts/check-live.mjs",
     "check:bitget": "node examples/check-bitget.mjs",
-    "demo:cli": "node examples/demo-cli.mjs"
+    "demo:cli": "node examples/demo-cli.mjs",
+    "build:pdfs": "node scripts/build-pdfs.mjs"
   },
   "engines": {
     "node": ">=22.5"

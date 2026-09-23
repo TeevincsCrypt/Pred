@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PRED Whitepaper — Ghost Event Intelligence for Tokenized Equities</title>
+<link rel="stylesheet" href="pdf.css" />
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm; }
+  body { font-size: 10.4pt; line-height: 1.55; }
+  h1 { font-size: 26pt; line-height: 1.1; letter-spacing: -0.02em; margin: 10px 0 8px; }
+  h2 { font-size: 14pt; margin: 22px 0 6px; padding-top: 6px; border-top: 2px solid var(--primary); display: flex; gap: 10px; align-items: baseline; page-break-after: avoid; }
+  h2 .n { color: var(--primary); font-size: 11pt; }
+  h3 { font-size: 11pt; margin: 14px 0 4px; page-break-after: avoid; }
+  p { margin: 6px 0; }
+  ul { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: space-between; page-break-after: always; }
+  .cover-top { padding-top: 8mm; }
+  .cover .lede { font-size: 13pt; color: var(--ink-2); max-width: 150mm; }
+  .cover-band { background: linear-gradient(135deg, var(--lav-1), var(--lav-2)); border-radius: 14px; padding: 18px 20px; }
+  .cover-band .flow { font: 700 11.5pt 'DejaVu Sans Mono', monospace; color: var(--primary); letter-spacing: 0.02em; }
+  .cover-meta { font-size: 9.5pt; color: var(--ink-2); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
+  .abstract { background: #f8f7fd; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; page-break-inside: avoid; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 16pt; color: var(--primary); }
+  table.t { font-size: 9.2pt; margin: 8px 0; page-break-inside: avoid; }
+  table.t th { background: #f4f3fa; font-weight: 700; padding: 5px 7px; border-bottom: 1px solid var(--line); }
+  table.t td { padding: 5px 7px; border-bottom: 1px solid var(--line); }
+  .formula { font: 8.6pt 'DejaVu Sans Mono', monospace; background: #f8f7fd; border-left: 3px solid var(--primary); padding: 8px 10px; margin: 8px 0; white-space: pre-wrap; }
+  .cat { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .pipeline { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 10px 0; }
+  .pipeline div { background: var(--primary-soft); border-radius: 8px; padding: 7px 6px; text-align: center; font-size: 8.6pt; }
+  .pipeline b { display: block; color: var(--primary); font-size: 9pt; letter-spacing: 0.04em; }
+  .foot { font-size: 8.5pt; color: var(--ink-3); }
+  .avoid { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="cover-top">
+    <div class="brand"><img src="../web/logo.png" alt="" /> PRED</div>
+    <div style="height:30mm"></div>
+    <div class="kicker">Whitepaper · Bitget AI Genesis Season 2</div>
+    <h1>PRED — Predictive Reaction<br />Event Detector</h1>
+    <p class="lede">24/7 market event intelligence for tokenized U.S. equities. PRED detects when a tokenized stock moves abnormally while Wall Street is closed, investigates why, tracks competing explanations until the evidence settles them, estimates the reaction, and learns from every outcome.</p>
+  </div>
+  <div>
+    <div class="cover-band">
+      <div class="kicker" style="color:var(--ink-2)">Find what the market knows before the news says it</div>
+      <div class="flow" style="margin-top:6px">DETECT → INVESTIGATE → HYPOTHESIZE → VERIFY → PREDICT → LEARN</div>
+    </div>
+    <div style="height:8mm"></div>
+    <div class="cover-meta">
+      <div><b>Status:</b> live in production on real Bitget market data</div>
+      <div><b>Source:</b> github.com/TeevincsCrypt/Pred</div>
+      <div><b>Market data:</b> Bitget Unified API (v3), public</div>
+      <div><b>Version:</b> September 2026 · hypothesis model pred-hyp-1.1.0</div>
+    </div>
+  </div>
+</section>
+
+<div class="abstract">
+  <div class="kicker">Abstract</div>
+  <p>Tokenized U.S. equities now trade around the clock on Bitget, while the underlying U.S. market is open for 6.5 hours a day. In the remaining 17.5 hours, and all weekend, prices can react to information before any headline, filing or analyst note explains it. We call such a move a <b>Ghost Event</b>. PRED is a live system that watches Bitget's tokenized-equity markets continuously and opens a Ghost Event only when three conditions hold at once. It then runs an evidence pipeline over public sources (SEC EDGAR filings, news and related-asset behaviour), maintains a transparent probability model over six competing catalyst categories, and resolves each event against authoritative evidence or observed price behaviour. It estimates the reaction into the next U.S. close from comparable past events, and scores itself on every outcome. PRED never fabricates data, never presents a model estimate as a certainty, and never trades on its own. An optional execution layer lets a human act on PRED's intelligence through Bitget, with explicit approval for every order.</p>
+</div>
+
+<h2><span class="n">01</span> The problem: prices move before the news</h2>
+<p>A U.S. stock that trades only in the regular session cannot react to overnight information until 9:30 a.m. ET. Its tokenized counterpart can react at 2 a.m. That creates a new, observable phenomenon: a tokenized equity moves abnormally while its home market is closed, and for minutes or hours there is no public explanation.</p>
+<ul>
+  <li><b>Traders</b> see a price move with no context. Is it information, a sector rotation, a crypto-driven flow, or a thin order book?</li>
+  <li><b>Existing tools</b> either alert on price alone (noisy, no explanation) or summarise news after the fact (too late, and blind to moves that precede news).</li>
+  <li><b>LLM "market analysts"</b> produce fluent explanations that are often unsourced or invented. That is a liability in finance.</li>
+</ul>
+<p>PRED targets the gap between the move and the explanation. It doesn't try to predict prices from nothing. It finds moves that <i>already happened</i> while Wall Street slept, works out what could explain them, and says honestly how sure it is.</p>
+
+<h2><span class="n">02</span> The Ghost Event</h2>
+<p>A Ghost Event is opened only when <b>all three</b> conditions hold. An abnormal move that fails any of them is logged as "not a Ghost Event" with the reason, and nothing is opened.</p>
+<div class="grid3">
+  <div class="box"><b>1 · Abnormal activity</b><br /><span class="muted">A price move that is statistically large for this instrument, confirmed by volume, on a liquid baseline.</span></div>
+  <div class="box"><b>2 · Traditional market closed</b><br /><span class="muted">Per the NYSE calendar: nights, weekends, holidays and 13:00 early closes (2025–2027).</span></div>
+  <div class="box"><b>3 · Tokenized market live</b><br /><span class="muted">The Bitget instrument is online, candles are fresh, trades occurred in the last 15 minutes, and it isn't a thin market.</span></div>
+</div>
+
+<h2><span class="n">03</span> System overview</h2>
+<div class="pipeline">
+  <div><b>DETECT</b>Statistical anomaly on live 1-min bars</div>
+  <div><b>INVESTIGATE</b>Filings, news, peers, crypto, calendar</div>
+  <div><b>HYPOTHESIZE</b>6 catalyst categories, evidence-weighted</div>
+  <div><b>VERIFY</b>Official evidence or price behaviour</div>
+  <div><b>PREDICT</b>Reaction range from comparable events</div>
+  <div><b>LEARN</b>Score direction, range, catalyst</div>
+</div>
+<p>PRED is a single Node.js 22 service with no runtime dependencies. It uses the built-in <code>node:sqlite</code> for persistence and Server-Sent Events for the live dashboard. Six agents (Detector, Investigator, Hypothesis, Verifier, Reaction, Memory) are orchestrated by an engine that writes an append-only audit trail for every event. Three independent loops run continuously:</p>
+<table class="t">
+  <tr><th>Loop</th><th>Default cadence</th><th>Work</th></tr>
+  <tr><td>Market poll</td><td>15 s</td><td>All tickers in one request per category, plus the 1-minute candles that are due (batch size adapts to the number of tracked assets)</td></tr>
+  <tr><td>Detector</td><td>30 s</td><td>Evaluates every monitored instrument and progresses open events through verification</td></tr>
+  <tr><td>Asset discovery</td><td>15 min</td><td>Re-discovers Bitget's tokenized-equity universe from instrument metadata</td></tr>
+</table>
+
+<h2><span class="n">04</span> Data sources</h2>
+<h3>Bitget (market data)</h3>
+<p>PRED uses Bitget's public Unified API v3: <code>/api/v3/market/instruments</code>, <code>/tickers</code>, <code>/candles</code> and <code>/orderbook</code>. Tokenized equities are <b>discovered, never assumed</b>. Spot instruments flagged <code>isRwa</code> and USDT-margined perpetuals with <code>symbolType: "stock"</code> are parsed into their underlying ticker, then matched against SEC EDGAR's registrant list. PRED only reasons about U.S.-listed names, because its Ghost Event definition depends on U.S. market hours. Commodities, FX, and Hong Kong, Korean and Japanese listings are listed but not monitored.</p>
+<div class="grid3">
+  <div class="stat"><b>336</b>tokenized instruments discovered on Bitget</div>
+  <div class="stat"><b>219</b>U.S.-listed stocks &amp; ETFs eligible and monitored</div>
+  <div class="stat"><b>10,455</b>SEC registrants in the matching directory</div>
+</div>
+<p class="foot">Production figures observed on the live deployment, September 2026.</p>
+<h3>Evidence sources</h3>
+<table class="t">
+  <tr><th>Source</th><th>What PRED records</th><th>Safeguards</th></tr>
+  <tr><td>SEC EDGAR</td><td>Material filings (8-K, 6-K, 10-Q/K, 13D/G, Form 4, S-3, 424B5, 425): form, items, acceptance time, URL</td><td>Declared User-Agent, ≤ 6 req/s, de-duplication by accession number</td></tr>
+  <tr><td>GDELT DOC 2.0</td><td>Headlines, publisher domain, publication time, matched entities, relevance</td><td>15-min cache, no retry into a 429, exponential backoff</td></tr>
+  <tr><td>Google News RSS</td><td>Same fields; automatic backup when GDELT is paused or blocking the host</td><td>Same cache and backoff; every item marked with its provider</td></tr>
+  <tr><td>Bitget itself</td><td>Peer moves, sibling issuer tokens, BTC/ETH, market-wide breadth, spread, follow-through or reversal</td><td>Only instruments Bitget actually lists</td></tr>
+  <tr><td>Calendar</td><td>Scheduled events you maintain (earnings, etc.)</td><td>Labeled SCHEDULED, never treated as an observed catalyst</td></tr>
+</table>
+
+<h2><span class="n">05</span> Detection</h2>
+<p>For each instrument, PRED compares the last 5 one-minute bars against a 120-bar baseline:</p>
+<div class="formula">σ      = std(1-min log returns over the baseline)
+z      = ln(P_now / P_anchor) / (σ · √5)
+volume ratio = mean(window volume) / median(baseline volume)   (capped at 50×)
+score  = 0.9·max(0,|z|−1) + 1.2·log2(volume ratio)
+       + 0.5·(volatility ratio−1) + 0.3·(spread ratio−1)
+
+abnormal ⇔ |move| ≥ 0.6%  and  ( (|z| ≥ 3.5 and volume ≥ 2.5×)  or  score ≥ 6 )</div>
+<p>These guards come from production experience:</p>
+<ul>
+  <li><b>Contiguity:</b> a data gap (a restart or a halt) is never read as a price move.</li>
+  <li><b>Liquid baseline:</b> at least 60% of baseline minutes must have traded. On thin pre-market books a median volume of zero once made a single trade look like a 10¹⁰% volume spike. That case is now suppressed with a logged reason.</li>
+  <li><b>Thin markets:</b> instruments below a minimum 24h turnover are excluded.</li>
+  <li><b>Cooldown:</b> one open event per instrument until its outcome is measured, so a single catalyst isn't counted twice.</li>
+</ul>
+
+<div class="avoid">
+<h2><span class="n">06</span> Hypotheses: a transparent model</h2>
+<p>Every Ghost Event carries a probability distribution over six catalyst categories:</p>
+<table class="t">
+  <tr><th>Category</th><th>Prior (log-odds)</th><th>Typical supporting evidence</th></tr>
+  <tr><td><span class="cat" style="background:var(--company)"></span>Company-specific catalyst</td><td>0</td><td>Move not explained by peers; filings; company-named headlines</td></tr>
+  <tr><td><span class="cat" style="background:var(--sector)"></span>Sector-wide repricing</td><td>0</td><td>Related companies moving together</td></tr>
+  <tr><td><span class="cat" style="background:var(--macro)"></span>Macro / market-wide flow</td><td>−0.5</td><td>Broad tokenized-equity breadth; BTC/ETH moves</td></tr>
+  <tr><td><span class="cat" style="background:var(--liquidity)"></span>Liquidity anomaly</td><td>−0.2</td><td>Wide spreads, reversal, no news</td></tr>
+  <tr><td><span class="cat" style="background:var(--scheduled)"></span>Scheduled event pre-positioning</td><td>−1.5</td><td>A calendar entry close to the move</td></tr>
+  <tr><td><span class="cat" style="background:var(--unknown)"></span>Unknown / unexplained</td><td>+0.3</td><td>Absence of evidence</td></tr>
+</table>
+</div>
+<div class="formula">score_k = prior_k + Σ weight(evidence → k)   (caps: news ≤ 2.4, filings ≤ 2.0)
+p_k     = softmax(score_k / 1.5)              (≤ 0.90; ≤ 0.95 if authoritative)</div>
+<p>Each hypothesis shows the evidence for and against it, with weights and sources, the number of independent sources, its change since the previous revision, and a "why N%" breakdown. Revisions are append-only, so earlier reasoning is never overwritten. The numbers are model confidence estimates. PRED says so wherever they appear, and calibrates them against outcomes in PRED Memory.</p>
+
+<h2><span class="n">07</span> Verification and resolution</h2>
+<p>PRED never forces a confirmation. An event resolves in one of three ways:</p>
+<ul>
+  <li><b>CONFIRMED</b> needs <i>authoritative</i> evidence: an official company release, or a material SEC filing tied to the move.</li>
+  <li><b>INVALIDATED</b> means the evidence contradicts the leading hypothesis. For example, the move fully reverted and the model now leads with liquidity.</li>
+  <li><b>At the U.S. open plus 30 minutes</b>, PRED closes verification, because the question a Ghost Event asks is whether the move can be explained before Wall Street trades it:
+    <ul>
+      <li>If the move <b>faded</b> (20% or less of it left) with no official news, it was liquidity, not information: INVALIDATED, or CONFIRMED as liquidity if PRED already led with that.</li>
+      <li>If it <b>held</b>, the event is UNRESOLVED · held: the market kept a move nobody has explained yet.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2><span class="n">08</span> Reaction prediction</h2>
+<p>When a catalyst is confirmed, or the leading hypothesis reaches 70%, the Reaction agent estimates the move from the prediction time to the first U.S. regular-session close. It finds comparable past events in PRED Memory (same direction, similar size and volume profile, same catalyst category), weights them by similarity, and reports the weighted 20th/50th/80th percentiles as a range with a confidence score. If fewer than three comparable events with known outcomes exist, it reports <b>"Insufficient live history"</b> instead of producing a number. Live memory starts at zero, so early reaction estimates are deliberately absent or labelled LOW CONFIDENCE.</p>
+
+<h2><span class="n">09</span> Learning: PRED Memory</h2>
+<p>At the U.S. close after each event, PRED measures the actual reaction and scores itself:</p>
+<ul>
+  <li>whether it got the direction right;</li>
+  <li>whether the move landed inside the predicted range;</li>
+  <li>whether the leading catalyst matched the verified one.</li>
+</ul>
+<p>It also tracks how well its stated confidence matches reality (a reliability curve and a Brier score) and tags each failure mode. These records feed the next reaction estimates. The track record is live-only: nothing synthetic is ever mixed into it. The separately labelled demo uses its own simulated memory.</p>
+
+<h2><span class="n">10</span> The AI analyst (optional)</h2>
+<p>A language model (Claude, or a Groq-hosted open model on the free tier) can write the plain-English explanation of the leading hypothesis. It sees only the evidence PRED collected, must cite evidence IDs, and is instructed never to invent facts or numbers. It <b>never</b> sets prices, probabilities, confirmations or trade decisions. Those come from the transparent model above. If the model is unavailable or rate-limited, PRED uses a deterministic template, so the system never depends on an LLM to function.</p>
+
+<h2><span class="n">11</span> Human-approved execution</h2>
+<p>PRED is an intelligence layer, not a trading bot. For an operator who wants to act on a Ghost Event, PRED includes an execution layer on Bitget's Unified Trading API (<code>POST /api/v3/trade/place-order</code>). It is built so that no agent, background job, stream or webhook can place an order:</p>
+<ul>
+  <li><b>Separate module.</b> The trading code is isolated from the agents, and a test fails the build if any agent imports it. There is exactly one call site that submits an order.</li>
+  <li><b>Explicit approval.</b> Every order needs a logged-in operator, a CSRF-protected POST, and the exact confirmation phrase (e.g. <code>BUY 0.12 NVDAUSDT</code>).</li>
+  <li><b>Server-built orders.</b> The browser names a plan ID only; the server rebuilds the order from the stored plan and fresh Bitget data.</li>
+  <li><b>Revalidation before sending.</b> Instrument status and precision, price drift, balance, account mode, and the per-order, per-position and daily notional limits are all rechecked.</li>
+  <li><b>One order per plan.</b> An atomic database claim makes concurrent approvals produce exactly one order. A timeout is reconciled by client order ID, never resent.</li>
+  <li><b>Accurate status.</b> SUBMITTED means Bitget accepted the order; FILLED comes only from Bitget's order status. Every step is recorded in an audit trail.</li>
+</ul>
+<p>Execution is <b>disabled by default</b> and requires deliberate configuration. It has been verified with an automated test suite against a simulated Bitget endpoint, and with read-only checks against the live Bitget account API.</p>
+
+<h2><span class="n">12</span> Integrity principles</h2>
+<div class="grid2">
+  <div class="box"><b>No synthetic data in live mode.</b> Missing fields are <code>null</code> and shown as n/a. The simulated demo is isolated and labelled SIMULATED everywhere.</div>
+  <div class="box"><b>Provenance on everything.</b> Every evidence item carries its class (OBSERVED / SCHEDULED / HISTORICAL), source and timestamp. URLs are validated before display.</div>
+  <div class="box"><b>Honest status.</b> Every source reports CONNECTED, DEGRADED or DISCONNECTED with the actual reason. "No active Ghost Events" is a valid state.</div>
+  <div class="box"><b>No false certainty.</b> Probabilities are capped short of 100% and labelled as model estimates. Reaction estimates require history.</div>
+</div>
+
+<h2><span class="n">13</span> Limitations</h2>
+<ul>
+  <li>Evidence weights are hand-set. Live calibration exists precisely to show where they are wrong.</li>
+  <li>Headline sentiment is not inferred. A confirmed catalyst establishes <i>that</i> something happened, not which way it cuts.</li>
+  <li>Free news sources are rate-limited and can block shared cloud IPs. PRED degrades gracefully and says so, but coverage depends on them.</li>
+  <li>The reaction model needs live history. Early predictions are rare and labelled low-confidence by design.</li>
+  <li>Execution is single-operator. A multi-user product would need per-user key custody, limits and regulatory review.</li>
+</ul>
+
+<h2><span class="n">14</span> Roadmap</h2>
+<ul>
+  <li>Automatic earnings and corporate-event calendar, so SCHEDULED hypotheses need no manual input.</li>
+  <li>Additional authoritative feeds: company investor-relations RSS and exchange notices.</li>
+  <li>Learned evidence weights once live memory reaches statistical size.</li>
+  <li>Alerts (webhook, Telegram) when a Ghost Event opens or resolves.</li>
+  <li>Bitget Agent Hub integration: publish PRED's verified signals to external, risk-controlled agents.</li>
+</ul>
+
+<p class="foot" style="margin-top:18px">PRED provides market intelligence, not investment advice. Probabilities are model estimates. Tokenized equities and derivatives carry significant risk.</p>
+</body>
+</html>
