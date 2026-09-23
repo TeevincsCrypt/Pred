@@ -84,6 +84,21 @@ function render(snap) {
   spotlight(snap);
 }
 
+// Volume vs baseline as a capped multiple (a near-empty baseline must never read as 10^10 %).
+const volX = (pct) => {
+  if (pct == null || !Number.isFinite(Number(pct))) return 'n/a';
+  const r = 1 + Number(pct) / 100;
+  return r >= 50 ? '>50× baseline' : `${r.toFixed(1)}× baseline`;
+};
+// Connections: always open on wide screens, collapsed to a one-line summary on phones/tablets.
+const narrow = window.matchMedia('(max-width: 1180px)');
+const syncConnBox = () => {
+  const box = $('connBox');
+  if (box) box.open = !narrow.matches;
+};
+narrow.addEventListener?.('change', syncConnBox);
+syncConnBox();
+
 const CONN_DOT = { CONNECTED: 'ok', ARMED: 'warn', DISABLED: '', DEGRADED: 'warn', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
 const ago = (t, now) => (t ? `${dur(Math.max(0, now - t)).replace(/^0m$/, '<1m')} ago` : 'never');
 
@@ -100,7 +115,11 @@ function renderLiveStatus(s) {
     <span class="pill">Active Ghost Events <b class="num">${st.activeGhostEvents}</b></span>
     <span class="pill" title="${st.lastMarketUpdate ? new Date(st.lastMarketUpdate).toISOString() : ''}">Last market update <b>${ago(st.lastMarketUpdate, s.now)}</b></span>
     ${st.ghostCondition ? '<span class="pill ghost-pill"><span class="dot ghost"></span><b>Ghost window open</b> · tokenized live, Wall Street closed</span>' : ''}`;
-  $('connList').innerHTML = Object.values(st.connections)
+  const conns = Object.values(st.connections);
+  const bad = conns.filter((c) => ['DISCONNECTED', 'DEGRADED', 'NOT CONFIGURED'].includes(c.status)).length;
+  const ok = conns.filter((c) => c.status === 'CONNECTED').length;
+  $('connSummary').innerHTML = `<span class="dot ${conns.some((c) => c.status === 'DISCONNECTED') ? 'err' : bad ? 'warn' : 'ok'}"></span>${ok}/${conns.length} connected${bad ? ` · ${bad} need attention` : ''}`;
+  $('connList').innerHTML = conns
     .map((c) => `<div class="conn" title="${esc(c.detail || '')}"><span class="dot ${CONN_DOT[c.status] ?? ''}"></span><span class="conn-name">${esc(c.name)}</span><span class="conn-st ${esc(String(c.status).replace(/\s+/g, '-'))}">${esc(c.status)}</span>${c.detail ? `<span class="conn-detail">${esc(c.detail)}</span>` : ''}</div>`)
     .join('');
   $('demoLink').hidden = !st.demoEnabled;
@@ -161,7 +180,7 @@ function renderFeed(s) {
       .map(
         (e) => `<button class="ev-item ${e.id === sel ? 'sel' : ''}" data-id="${esc(e.id)}">
       <div class="row"><span class="code">${esc(e.code)}</span><span class="st">${esc(human(e.state))}</span></div>
-      <div class="row"><b class="mono">${esc(e.ticker)}</b><span class="num ${pctClass(e.retPct)}">${pct(e.retPct)}</span><span class="num muted">vol ${e.volumeChangePct >= 0 ? '+' : ''}${e.volumeChangePct}%</span></div>
+      <div class="row"><b class="mono">${esc(e.ticker)}</b><span class="num ${pctClass(e.retPct)}">${pct(e.retPct)}</span><span class="num muted">vol ${volX(e.volumeChangePct)}</span></div>
       <div class="row muted"><span>${e.primary ? `${esc(CAT[e.primary.key]?.short)} ${e.primary.probability}%` : 'investigating…'}</span><span>${et(e.detectedAt)} ET</span></div>
     </button>`,
       )
@@ -230,7 +249,7 @@ function renderHero(s) {
     <div class="ghost-card">
       <div class="ghost-title"><span class="dot ${active ? 'ghost' : 'ok'}"></span>${esc(e.code)} ${provTag(e.provenance)}${e.priority ? ` <span class="prio">${esc(e.priority)} PRIORITY</span>` : ''}</div>
       <div class="ghost-ticker">${esc(e.ticker)}</div>
-      <div class="ghost-move"><span class="${pctClass(m.retPct)}">${pct(m.retPct)}</span><span class="vol">Volume ${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}%</span></div>
+      <div class="ghost-move"><span class="${pctClass(m.retPct)}">${pct(m.retPct)}</span><span class="vol">Volume ${volX(m.volumeChangePct)}</span></div>
       <dl class="kv">
         <dt>Market status</dt><dd><span class="closed-badge">${esc(e.market.label)}</span></dd>
         <dt>Catalyst</dt><dd>${esc(catalyst)}</dd>

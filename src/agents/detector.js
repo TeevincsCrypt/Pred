@@ -20,7 +20,12 @@ export const DETECTOR_DEFAULTS = {
   minVolumeRatio: 2.5,
   scoreThreshold: 6,
   cooldownMs: 60 * 60 * 1000,
+  // At least this share of baseline minutes must have traded; otherwise the
+  // baseline is illiquid and price/volume "anomalies" are artefacts of single trades.
+  minActiveShare: 0.6,
 };
+// A zero-volume baseline would make one trade look like a 10^10 % volume jump.
+const MAX_VOLUME_RATIO = 50;
 
 export function measure(candles, { windowBars = 5, baselineBars = 120, minBaselineBars = 45 } = {}) {
   if (candles.length < minBaselineBars + windowBars + 1) return null;
@@ -42,8 +47,11 @@ export function measure(candles, { windowBars = 5, baselineBars = 120, minBaseli
   const retPct = (lastClose / anchor.close - 1) * 100;
   const priceZ = logMove / (sigma * Math.sqrt(windowBars));
 
-  const baseVol = Math.max(median(base.map((c) => c.volume)), 1e-9);
-  const volumeRatio = mean(win.map((c) => c.volume)) / baseVol;
+  const baseVols = base.map((c) => c.volume);
+  const activeShare = baseVols.filter((v) => v > 0).length / baseVols.length;
+  // Median is robust, but on illiquid books it is 0; fall back to the mean.
+  const baseVol = median(baseVols) > 0 ? median(baseVols) : mean(baseVols);
+  const volumeRatio = baseVol > 0 ? Math.min(mean(win.map((c) => c.volume)) / baseVol, MAX_VOLUME_RATIO) : 1;
 
   const rangeOf = (c) => (c.high - c.low) / c.close;
   const baseRange = Math.max(mean(base.map(rangeOf)), 1e-6);
@@ -61,6 +69,7 @@ export function measure(candles, { windowBars = 5, baselineBars = 120, minBaseli
     volumeChangePct: round((volumeRatio - 1) * 100, 0),
     volatilityRatio: round(volatilityRatio, 2),
     baselineBars: base.length,
+    baselineActiveShare: round(activeShare, 2),
   };
 }
 
@@ -149,6 +158,7 @@ export function createDetector(opts = {}) {
       if (market.usMarketOpen) return { suppressed: true, ticker, reason: 'U.S. regular session open — not a Ghost Event', measurements: m };
       if (tradability.status !== 'LIVE') return { suppressed: true, ticker, reason: `tokenized market ${tradability.status}: ${tradability.reason || ''}`.trim(), measurements: m };
       if (tradability.thin) return { suppressed: true, ticker, reason: `thin market (${tradability.reason})`, measurements: m };
+      if (m.baselineActiveShare < cfg.minActiveShare) return { suppressed: true, ticker, reason: `illiquid baseline: only ${Math.round(m.baselineActiveShare * 100)}% of the last ${m.baselineBars} minutes traded`, measurements: m };
 
       lastFired.set(ticker, now);
       const cross = crossAsset(store, m, peers, cryptoRefs, marketWide);

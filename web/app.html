@@ -29,8 +29,10 @@
         <a href="#trade-sec"><svg viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>Trade</a>
         <a href="#memory-sec"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Memory</a>
       </nav>
-      <div class="side-label">Connections</div>
-      <div id="connList" class="conn-list"><div class="muted" style="padding:0 10px">Checking…</div></div>
+      <details class="conn-box" id="connBox" open>
+        <summary class="conn-summary"><span class="side-label">Connections</span><span id="connSummary" class="conn-sum-text"></span></summary>
+        <div id="connList" class="conn-list"><div class="muted" style="padding:0 10px">Checking…</div></div>
+      </details>
       <div class="side-label">Links</div>
       <div class="side-links">
         <a href="#" id="signalsLink" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M4 12h4l3-8 4 16 3-8h2"/></svg>Signals API</a>
