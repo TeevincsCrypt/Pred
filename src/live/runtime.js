@@ -10,6 +10,7 @@ import { createMarketEngine, CRYPTO_REFS } from '../market/market-engine.js';
 import { loadRelationships } from '../market/relationships.js';
 import { createSecSource } from '../sources/sec.js';
 import { createNewsSource } from '../sources/news.js';
+import { createGoogleNewsSource } from '../sources/google-news.js';
 import { createCalendarSource } from '../sources/calendar.js';
 import { createUnavailableSource } from '../sources/unavailable.js';
 import { openDb } from '../store/db.js';
@@ -27,13 +28,15 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
   const memory = createMemory({ records, onUpsert: (r) => store.saveMemory(r) });
   const client = createBitgetClient({ fetchImpl, baseUrl: config.bitgetBaseUrl });
   const sec = createSecSource({ fetchImpl });
-  const news = createNewsSource({ fetchImpl });
+  // GDELT first; Google News RSS takes over when GDELT is paused or blocked.
+  const googleNews = createGoogleNewsSource({ fetchImpl });
+  const news = createNewsSource({ fetchImpl, fallback: googleNews });
   const calendar = createCalendarSource({ file: config.calendarFile });
   const social = createUnavailableSource('social', 'Social / web signals', 'social', 'No social data connector configured');
   const claude = analyst || selectAnalyst();
   const sources = [news, sec, social, calendar];
   const startedAt = Date.now();
-  const probes = { sec: null, gdelt: null };
+  const probes = { sec: null, gdelt: null, googlenews: null };
 
   const universe = {};
   const monitored = [];
@@ -88,7 +91,7 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
   engine.restore(restored);
 
   async function probeSources() {
-    for (const [k, src] of [['sec', sec], ['gdelt', news]]) {
+    for (const [k, src] of [['sec', sec], ['gdelt', news], ['googlenews', googleNews]]) {
       const t0 = Date.now();
       try {
         probes[k] = { ...(await src.probe()), at: Date.now() };
@@ -132,6 +135,11 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       bitget: { name: 'Bitget', status: label(client.health.status), detail: client.health.lastError || `${market.assets.length} RWA instruments · ${client.baseUrl}`, ...h(client.health) },
       sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : secStatus === 'degraded' ? degradedNote(sec.health) : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
       gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: bo.paused ? news.health.lastError : gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
+      googlenews: (() => {
+        const st0 = googleNews.health.status !== 'unknown' ? googleNews.health.status : probes.googlenews?.status === 'ok' ? 'connected' : probes.googlenews?.status || 'unknown';
+        const st = intermittent(st0, googleNews.health);
+        return { name: 'Google News (backup)', status: label(st), detail: googleNews.health.lastError || (st === 'connected' ? okNote(googleNews.health, probes.googlenews) : probes.googlenews?.note) || 'used when GDELT is unavailable', ...h(googleNews.health) };
+      })(),
       claude: { name: claude.enabled ? `AI analyst · ${claude.providerName || 'Claude'}` : 'AI analyst', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null, provider: claude.provider || null },
       execution: (() => {
         const t = trading.status();

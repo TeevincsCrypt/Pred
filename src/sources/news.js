@@ -44,7 +44,40 @@ const titleKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' '
 const CACHE_MS = 15 * 60_000;
 const MAX_WAITING = 4;
 
-export function createNewsSource({ fetchImpl = fetch, timespan = '24h', now = () => Date.now() } = {}) {
+// Convert normalized articles ({ title, url, domain, ts, language, provider })
+// into evidence. Shared by GDELT and the Google News backup.
+function toEvidence(articles, asset, at, provider) {
+  const seenUrl = new Set();
+  const seenTitle = new Set();
+  const evidence = [];
+  for (const a of articles) {
+    const url = safeUrl(a.url);
+    if (!a.ts || a.ts > at || !url || !a.title) continue;
+    const cu = canonical(url);
+    const tk = titleKey(a.title);
+    if (seenUrl.has(cu) || seenTitle.has(tk)) continue;
+    seenUrl.add(cu);
+    seenTitle.add(tk);
+    const c = classifyArticle({ title: a.title, domain: a.domain }, asset);
+    evidence.push({
+      // Keyed by headline so the same story from either provider is recorded once.
+      key: `news:${tk.slice(0, 160)}`,
+      kind: 'NEWS_ARTICLE',
+      title: String(a.title).slice(0, 300),
+      detail: `${a.domain || 'unknown source'}${c.official ? ' · official / press wire' : ''} · relevance ${c.relevance} · via ${provider}`,
+      sourceTime: a.ts,
+      url,
+      data: { scope: c.scope, official: c.official, domain: a.domain || null, publishedAt: a.ts, matchedTerms: c.matchedTerms, relevance: c.relevance, language: a.language || null, provider },
+    });
+  }
+  return evidence;
+}
+const summarize = (evidence, asset, span, provider) => {
+  const inTitle = evidence.filter((e) => e.data.scope === 'company').length;
+  return `${inTitle} relevant article(s) naming ${asset.company} in the headline, ${evidence.length - inTitle} other mention(s), last ${span} (${provider})`;
+};
+
+export function createNewsSource({ fetchImpl = fetch, timespan = '24h', now = () => Date.now(), fallback = null } = {}) {
   const http = createHttp({ name: 'gdelt', minIntervalMs: 6000, timeoutMs: 15000, retries: 0, fetchImpl, cacheTtlMs: CACHE_MS });
   const cache = new Map();
   const guard = { pausedUntil: 0, strikes: 0, waiting: 0 };
@@ -99,42 +132,33 @@ export function createNewsSource({ fetchImpl = fetch, timespan = '24h', now = ()
       return { status: 'ok', note: `${(body.articles || []).length} articles in probe` };
     },
 
-    async collect({ asset, now }) {
+    fallback,
+
+    async collect({ asset, now: at }) {
       const terms = (asset.newsTerms || []).filter((t) => t && t.length >= 3);
       if (!terms.length) return { status: 'ok', note: `no search terms for ${asset.ticker}`, evidence: [] };
-      let body;
+      let gdeltProblem = null;
       try {
-        body = await fetchNews(query(terms));
+        const body = await fetchNews(query(terms));
+        if (body && typeof body === 'object' && !('articles' in body) && Object.keys(body).length) throw new Error('GDELT response missing articles');
+        const articles = (body?.articles || []).map((a) => ({ title: a.title, url: a.url, domain: a.domain, ts: parseGdeltDate(a.seendate), language: a.language }));
+        const evidence = toEvidence(articles, asset, at, 'GDELT');
+        return { status: 'ok', note: summarize(evidence, asset, timespan, 'GDELT'), evidence };
       } catch (err) {
-        if (err.gdeltSkipped) return { status: 'unavailable', note: err.message, evidence: [] };
-        throw err;
+        gdeltProblem = err.message;
+        if (!fallback) {
+          if (err.gdeltSkipped) return { status: 'unavailable', note: err.message, evidence: [] };
+          throw err;
+        }
       }
-      if (body && typeof body === 'object' && !('articles' in body) && Object.keys(body).length) return { status: 'unavailable', note: 'GDELT response missing articles', evidence: [] };
-      const seenUrl = new Set();
-      const seenTitle = new Set();
-      const evidence = [];
-      for (const a of body?.articles || []) {
-        const ts = parseGdeltDate(a.seendate);
-        const url = safeUrl(a.url);
-        if (!ts || ts > now || !url || !a.title) continue;
-        const cu = canonical(url);
-        const tk = titleKey(a.title);
-        if (seenUrl.has(cu) || seenTitle.has(tk)) continue;
-        seenUrl.add(cu);
-        seenTitle.add(tk);
-        const c = classifyArticle(a, asset);
-        evidence.push({
-          key: `news:${cu}`,
-          kind: 'NEWS_ARTICLE',
-          title: String(a.title).slice(0, 300),
-          detail: `${a.domain || 'unknown source'}${c.official ? ' · official / press wire' : ''} · relevance ${c.relevance}`,
-          sourceTime: ts,
-          url,
-          data: { scope: c.scope, official: c.official, domain: a.domain || null, publishedAt: ts, matchedTerms: c.matchedTerms, relevance: c.relevance, language: a.language || null },
-        });
+      // GDELT paused/blocked: use the Google News backup.
+      try {
+        const items = await fallback.search(terms);
+        const evidence = toEvidence(items.map((i) => ({ title: i.title, url: i.url, domain: i.domain, ts: i.ts })), asset, at, 'Google News');
+        return { status: 'ok', note: `${summarize(evidence, asset, '24h', 'Google News backup')} — GDELT unavailable: ${gdeltProblem}`, evidence };
+      } catch (err) {
+        return { status: 'unavailable', note: `GDELT: ${gdeltProblem}; Google News backup: ${err.message}`, evidence: [] };
       }
-      const inTitle = evidence.filter((e) => e.data.scope === 'company').length;
-      return { status: 'ok', note: `${inTitle} relevant article(s) naming ${asset.company} in the headline, ${evidence.length - inTitle} other mention(s), last ${timespan}`, evidence };
     },
   };
 }

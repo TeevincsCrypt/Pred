@@ -15,6 +15,7 @@ import { buildUniverse } from '../src/market/live-universe.js';
 import { loadRelationships } from '../src/market/relationships.js';
 import { createSecSource } from '../src/sources/sec.js';
 import { createNewsSource } from '../src/sources/news.js';
+import { createGoogleNewsSource } from '../src/sources/google-news.js';
 import { openDb } from '../src/store/db.js';
 import { measure } from '../src/agents/detector.js';
 import { config } from '../src/config.js';
@@ -128,6 +129,11 @@ await step('SEC', async () => {
     }
   }
 }
+
+await step('Google News', async () => {
+  const items = await createGoogleNewsSource().search([sample?.company || 'NVIDIA']);
+  return `backup news source reachable · ${items.length} headline(s) in the last 24h for ${sample?.company || 'NVIDIA'}`;
+});
 
 await step('Database', async () => {
   const db = openDb(config.dbPath);
