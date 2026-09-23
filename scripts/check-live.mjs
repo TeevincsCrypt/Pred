@@ -122,4 +122,7 @@ await step('Detector', async () => {
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${failed.length ? `${failed.length} check(s) failed: ${failed.map((f) => f.name).join(', ')}` : 'All checks passed — PRED can run LIVE here.'}`);
-process.exit(failed.length ? 1 : 0);
+// Set the exit code and let the event loop drain; calling process.exit()
+// while fetch sockets are closing aborts Node on Windows (libuv assertion).
+process.exitCode = failed.length ? 1 : 0;
+setTimeout(() => process.exit(), 3000).unref();

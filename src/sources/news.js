@@ -36,10 +36,13 @@ const canonical = (u) => {
 const titleKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 export function createNewsSource({ fetchImpl = fetch, timespan = '24h' } = {}) {
-  const http = createHttp({ name: 'gdelt', minIntervalMs: 5500, timeoutMs: 12000, retries: 1, baseBackoffMs: 6000, fetchImpl, cacheTtlMs: 4 * 60_000 });
+  const http = createHttp({ name: 'gdelt', minIntervalMs: 6000, timeoutMs: 15000, retries: 1, baseBackoffMs: 10_000, fetchImpl, cacheTtlMs: 10 * 60_000 });
 
   function query(terms) {
-    const q = `(${terms.map((t) => `"${t.replace(/"/g, '')}"`).join(' OR ')}) sourcelang:english`;
+    // GDELT rejects parentheses around a single term ("Parentheses may only
+    // be used around OR'd statements"), so only group two or more.
+    const quoted = terms.map((t) => `"${t.replace(/"/g, '')}"`);
+    const q = `${quoted.length > 1 ? `(${quoted.join(' OR ')})` : quoted[0]} sourcelang:english`;
     return `https://api.gdeltproject.org/api/v2/doc/doc?${new URLSearchParams({ query: q, mode: 'artlist', format: 'json', maxrecords: '50', sort: 'datedesc', timespan })}`;
   }
 

@@ -64,6 +64,23 @@ test('universe is discovered from isRwa / stock instruments only', () => {
   assert.deepEqual(parseUnderlying('TSLAON'), { underlying: 'TSLA', issuer: 'Ondo', assetClass: 'equity', suffix: 'on' });
 });
 
+test('commodity perps are never matched to SEC companies; SEC-matched "crypto" perps are equities', () => {
+  const futures = [
+    { symbol: 'CLUSDT', category: 'USDT-FUTURES', baseCoin: 'CL', quoteCoin: 'USDT', status: 'online', symbolType: 'commodity', isRwa: true },
+    { symbol: 'HPQUSDT', category: 'USDT-FUTURES', baseCoin: 'HPQ', quoteCoin: 'USDT', status: 'online', symbolType: 'crypto', isRwa: true },
+    { symbolType: 'crypto', symbol: 'EURUSDUSDT', category: 'USDT-FUTURES', baseCoin: 'EURUSD', quoteCoin: 'USDT', status: 'online', isRwa: true },
+  ];
+  const secDirectory = new Map([['CL', { cik: 21665, title: 'COLGATE PALMOLIVE CO' }], ['HPQ', { cik: 47217, title: 'HP INC' }]]);
+  const u = buildUniverse({ futures, secDirectory, relationships: {} });
+  const by = Object.fromEntries(u.assets.map((a) => [a.key, a]));
+  assert.equal(by['CL-PERP'].company, 'CL');
+  assert.equal(by['CL-PERP'].usListed, false);
+  assert.equal(by['HPQ-PERP'].assetClass, 'equity');
+  assert.ok(u.monitored.includes('HPQ-PERP'));
+  assert.equal(by['EURUSD-PERP'].assetClass, 'crypto');
+  assert.ok(!u.monitored.includes('EURUSD-PERP'));
+});
+
 test('http retries 429 with backoff and records health', async () => {
   let n = 0;
   const http = createHttp({

@@ -54,12 +54,15 @@ export function createHttp({ name, minIntervalMs = 0, timeoutMs = 8000, retries 
     if (!res.ok) throw new HttpError(`${name}: HTTP ${res.status}`, { status: res.status, retryable: false });
     const text = await res.text();
     if (parse === 'text') return text;
+    if (!text.trim()) return {};
     try {
       return JSON.parse(text);
     } catch {
-      // GDELT answers rate-limit violations with a plain-text 200.
+      // GDELT answers rate-limit violations and query errors with plain text.
       const limited = /limit requests|rate limit/i.test(text);
-      throw new HttpError(`${name}: malformed JSON response${limited ? ' (rate limited)' : ''}`, { retryable: limited, body: text.slice(0, 200) });
+      if (limited) health.rateLimited++;
+      const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+      throw new HttpError(`${name}: ${limited ? 'rate limited' : 'non-JSON response'}: ${snippet}`, { retryable: limited, body: text.slice(0, 200) });
     }
   }
 
