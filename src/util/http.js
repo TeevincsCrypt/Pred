@@ -41,7 +41,10 @@ export function createHttp({ name, minIntervalMs = 0, timeoutMs = 8000, retries 
     try {
       res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
     } catch (err) {
-      throw new HttpError(`${name}: ${err.name === 'TimeoutError' ? `timeout after ${timeoutMs}ms` : err.message}`, { retryable: true });
+      // Node's fetch reports every network error as "fetch failed"; the real
+      // reason (DNS, TLS certificate, refused connection) is in err.cause.
+      const cause = err.cause ? ` (${[err.cause.code, err.cause.message].filter(Boolean).join(': ')})` : '';
+      throw new HttpError(`${name}: ${err.name === 'TimeoutError' ? `timeout after ${timeoutMs}ms` : `${err.message}${cause}`}`, { retryable: true });
     }
     health.lastLatencyMs = Date.now() - t0;
     if (res.status === 429 || res.status >= 500) {

@@ -20,6 +20,7 @@ const ok = (name, detail) => {
   console.log(`✓ ${name.padEnd(13)} ${detail}`);
 };
 const HINTS = [
+  [/CERT|certificate|self[- ]signed/i, 'TLS certificate rejected — antivirus or a proxy is intercepting HTTPS. Node 22.15+: set $env:NODE_OPTIONS="--use-system-ca" (PowerShell) to trust the Windows certificate store, or disable HTTPS scanning for node.exe.'],
   [/bitget: timeout|ENOTFOUND|ECONNREFUSED|ECONNRESET|fetch failed/i, 'this machine cannot reach Bitget — test with `curl.exe -m 10 https://api.bitget.com/api/v3/public/time`; if that also fails, your ISP/DNS/firewall blocks it (try DNS 1.1.1.1 or a VPN) or raise BITGET_TIMEOUT_MS. The Railway deployment has its own network.'],
 ];
 const fail = (name, err) => {
