@@ -30,6 +30,8 @@ export const config = {
   rescanIntervalMs: int(process.env.PRED_RESCAN_INTERVAL_MS, 5 * 60_000),
   sourceProbeMs: int(process.env.PRED_SOURCE_PROBE_MS, 10 * 60_000),
   resolutionTimeoutMs: int(process.env.PRED_VERIFY_TIMEOUT_MS, null),
+  // Verification closes this long after the next U.S. open ("off" = wait for the close).
+  openDeadlineMs: String(process.env.PRED_OPEN_GRACE_MS).toLowerCase() === 'off' ? null : int(process.env.PRED_OPEN_GRACE_MS, 30 * 60_000),
 
   dbPath: process.env.PRED_DB_PATH || 'data/pred.sqlite',
   calendarFile: process.env.PRED_CALENDAR || 'data/calendar.json',

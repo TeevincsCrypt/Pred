@@ -118,6 +118,16 @@ test('events, hypotheses and the audit trail persist across a restart', async ()
   assert.equal(again.revisions.length, ev.revisions.length);
   assert.equal(again.timeline.length, ev.timeline.length);
   assert.equal(b.memory.stats().total, 1);
+  assert.ok(again.verifyDeadlineAt > again.nextOpenAt, 'verification closes after the next US open');
+
+  // Past the open deadline with no official catalyst → UNRESOLVED (not stuck awaiting).
+  const live = b.engine.events.get(ev.id);
+  live.nextOpenAt = Date.now() - 31 * 60_000;
+  b.engine.afterBatch();
+  assert.equal(live.state, 'UNRESOLVED');
+  assert.equal(live.resolution.basis, 'open-deadline');
+  assert.ok(!live.outcome, 'the reaction is still measured at the US close');
+  assert.ok(b.db.eventLog(ev.id).some((l) => l.kind === 'RESOLUTION'));
   b.stop();
   b.db.close();
 });

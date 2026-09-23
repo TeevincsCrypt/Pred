@@ -50,6 +50,11 @@ export function createEngine({
   tradability = () => ({ status: 'LIVE' }),
   // Optional: resolve as UNRESOLVED if no authoritative evidence within this window.
   resolutionTimeoutMs = null,
+  // Optional: close verification this long after the next U.S. regular open.
+  // A Ghost Event asks "can the off-hours move be explained before Wall Street
+  // trades it?" — if no authoritative source has appeared by then, the event
+  // resolves UNRESOLVED. The reaction is still measured at the U.S. close.
+  openDeadlineMs = null,
 }) {
   const store = new SeriesStore();
   const suppressedAt = new Map();
@@ -386,6 +391,29 @@ export function createEngine({
     emit();
   }
 
+  function resolveAtOpen(e, t) {
+    const m = e.anomaly.measurements;
+    const pxOpen = store.priceAt(e.ticker, e.nextOpenAt);
+    const heldPct = pxOpen && m.priceBefore ? round((pxOpen / m.priceBefore - 1) * 100, 2) : null;
+    const held = heldPct == null ? null : Math.sign(heldPct) === Math.sign(m.retPct) && Math.abs(heldPct) >= Math.abs(m.retPct) / 2;
+    e.resolution = {
+      outcome: 'UNRESOLVED',
+      actualCategory: null,
+      basis: 'open-deadline',
+      moveAtOpenPct: heldPct,
+      moveHeld: held,
+      judgedHypothesis: e.revisions.at(-1).primary,
+      originalHypothesis: e.revisions[0].primary,
+      resolvedAt: t,
+      timeToResolutionMs: t - e.detectedAt,
+    };
+    audit(e, 'RESOLUTION', e.resolution);
+    const moveText = heldPct == null ? 'no price at the open' : `move at the open ${fmtPct(heldPct)} vs ${fmtPct(m.retPct)} at detection (${held ? 'held' : 'faded'})`;
+    note(e, 'RESOLUTION', 'Verifier', `U.S. market opened without an official catalyst (no company release or material SEC filing) — UNRESOLVED. Leading hypothesis was ${e.revisions.at(-1).primary.title} ${e.revisions.at(-1).primary.probability}%; ${moveText}. Reaction will be measured at the U.S. close.`, { source: 'Verifier · open deadline' });
+    setState(e, 'UNRESOLVED');
+    syncRecord(e);
+  }
+
   function evaluateHorizon(event) {
     if (event.outcome || now() < event.horizonAt) return;
     const bars = store.candles(event.ticker);
@@ -487,6 +515,12 @@ export function createEngine({
         logOp({ component: 'detector', op: 'GHOST_EVENT', asset: ticker, retPct: a.measurements.retPct, volumeRatio: a.measurements.volumeRatio });
         track(openEvent(a).catch((err) => sys(`Event pipeline error: ${err.message}`, 'error')));
       }
+      if (openDeadlineMs != null) {
+        for (const e of events.values()) {
+          if (e.resolution || !e.revisions.length || e.state !== 'AWAITING_CONFIRMATION' || !e.nextOpenAt || t < e.nextOpenAt + openDeadlineMs) continue;
+          resolveAtOpen(e, t);
+        }
+      }
       if (resolutionTimeoutMs) {
         for (const e of events.values()) {
           if (!e.resolution && e.revisions.length && e.state === 'AWAITING_CONFIRMATION' && t - e.detectedAt >= resolutionTimeoutMs) {
@@ -522,7 +556,7 @@ export function createEngine({
     eventDetail(id) {
       const e = events.get(id);
       if (!e) return null;
-      return { ...e, graph: buildGraph(e), action: recommendAction(e, now()), chart: chartFor(e) };
+      return { ...e, verifyDeadlineAt: openDeadlineMs != null && e.nextOpenAt ? e.nextOpenAt + openDeadlineMs : null, graph: buildGraph(e), action: recommendAction(e, now()), chart: chartFor(e) };
     },
 
     snapshot({ selectedId } = {}) {
