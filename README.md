@@ -14,6 +14,8 @@ DETECT → INVESTIGATE → HYPOTHESIZE → VERIFY → PREDICT → LEARN
 
 Built for the **Bitget AI Genesis Season 2** hackathon.
 
+📄 **[Whitepaper (PDF)](web/whitepaper.pdf)** · **[Pitch deck (PDF)](web/pitch-deck.pdf)**, also served by a running PRED at `/whitepaper.pdf` and `/pitch-deck.pdf`.
+
 ---
 
 ## Quick start
@@ -316,8 +318,9 @@ src/
   store/       db (node:sqlite)
   demo/        simulated scenario, runner, sessions, seed
   server.js    HTTP + SSE
-scripts/       check-live.mjs
-web/           dashboard (app.html) · about page (index.html)
+scripts/       check-live.mjs · build-pdfs.mjs (npm run build:pdfs, needs Playwright)
+docs/          whitepaper.html · pitch-deck.html (sources of the PDFs)
+web/           dashboard (app.html) · landing page (index.html) · whitepaper.pdf · pitch-deck.pdf
 test/          node:test suites (a mocked Bitget is used only in tests)
 ```
 

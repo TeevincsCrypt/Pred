@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PRED Pitch Deck</title>
+<link rel="stylesheet" href="pdf.css" />
+<style>
+  @page { size: 1280px 720px; margin: 0; }
+  body { background: #fff; }
+  .slide { width: 1280px; height: 720px; padding: 64px 80px; position: relative; overflow: hidden; page-break-after: always; display: flex; flex-direction: column; background: #fff; }
+  .slide:last-child { page-break-after: auto; }
+  .slide.hero { background: radial-gradient(900px 520px at 100% 0%, var(--lav-2), transparent 70%), radial-gradient(700px 480px at 0% 100%, var(--lav-1), transparent 70%), #fff; }
+  .slide.dark { background: #0e0f1f; color: #fff; }
+  .slide.dark .muted { color: #b8bad0; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+  .top .brand img { height: 30px; }
+  .pg { font-size: 13px; color: var(--ink-3); }
+  h1 { font-size: 64px; line-height: 1.02; letter-spacing: -0.03em; margin: 0; }
+  h2 { font-size: 44px; line-height: 1.08; letter-spacing: -0.02em; margin: 6px 0 18px; }
+  .kicker { font-size: 14px; }
+  .lead { font-size: 22px; line-height: 1.45; color: var(--ink-2); max-width: 980px; }
+  .dark .lead { color: #c9cbe0; }
+  .accent { color: var(--primary); }
+  .cols { display: grid; gap: 22px; }
+  .c2 { grid-template-columns: 1fr 1fr; }
+  .c3 { grid-template-columns: repeat(3, 1fr); }
+  .c6 { grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; background: #fff; }
+  .card h3 { margin: 0 0 8px; font-size: 21px; }
+  .card p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ink-2); }
+  .num { font-size: 56px; font-weight: 800; color: var(--primary); letter-spacing: -0.02em; line-height: 1; }
+  .step { background: var(--primary-soft); border-radius: 14px; padding: 18px 14px; }
+  .step b { display: block; color: var(--primary); letter-spacing: 0.06em; font-size: 15px; margin-bottom: 6px; }
+  .step span { font-size: 14px; color: var(--ink-2); line-height: 1.4; display: block; }
+  .clock { display: flex; height: 64px; border-radius: 12px; overflow: hidden; margin: 18px 0 10px; font-weight: 700; font-size: 15px; }
+  .clock div { display: flex; align-items: center; justify-content: center; }
+  .foot { position: absolute; bottom: 30px; left: 80px; right: 80px; display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-3); }
+  ul.b { margin: 0; padding-left: 22px; font-size: 19px; line-height: 1.6; color: var(--ink-2); }
+  ul.b b { color: var(--ink); }
+  .ev { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+  .ev-h { background: linear-gradient(135deg, var(--lav-1), #fff); padding: 20px 24px; border-bottom: 1px solid var(--line); }
+  .ev-b { padding: 16px 24px; font-size: 15.5px; line-height: 1.6; color: var(--ink-2); }
+  .bar { height: 10px; border-radius: 6px; background: #eeeef5; overflow: hidden; margin: 4px 0 10px; }
+  .bar i { display: block; height: 100%; }
+  .row { display: flex; justify-content: space-between; font-size: 15px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.04em; }
+  table.cmp { font-size: 16px; }
+  table.cmp th, table.cmp td { padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  table.cmp th { color: var(--ink-3); font-weight: 700; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .yes { color: var(--good); font-weight: 700; }
+  .no { color: var(--ink-3); }
+</style>
+</head>
+<body>
+
+<!-- 1 · Title -->
+<section class="slide hero">
+  <div class="top"><div class="brand"><img src="../web/logo.png" alt="" /> PRED</div><div class="pg">Bitget AI Genesis · Season 2</div></div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center">
+    <div class="kicker">Traditional markets close. Information doesn't.</div>
+    <h1 style="margin-top:14px">Find what the market knows<br /><span class="accent">before the news says it.</span></h1>
+    <p class="lead" style="margin-top:22px">PRED is a 24/7 event-intelligence system for tokenized U.S. equities on Bitget. It catches the moves that happen while Wall Street sleeps, and explains them with evidence.</p>
+  </div>
+  <div class="foot"><span>PRED — Predictive Reaction Event Detector</span><span>github.com/TeevincsCrypt/Pred</span></div>
+</section>
+
+<!-- 2 · Problem -->
+<section class="slide">
+  <div class="top"><div class="kicker">The problem</div><div class="pg">02</div></div>
+  <h2>Tokenized stocks trade 24/7.<br />Wall Street trades 6.5 hours.</h2>
+  <div class="clock">
+    <div style="flex:9.5; background:#efeefb; color:var(--ink-2)">Closed — tokenized markets still trading</div>
+    <div style="flex:6.5; background:var(--primary); color:#fff">U.S. regular session 9:30–16:00 ET</div>
+    <div style="flex:8; background:#efeefb; color:var(--ink-2)">Closed — tokenized markets still trading</div>
+  </div>
+  <p class="muted" style="font-size:14px; margin:0 0 26px">About 73% of every weekday, and all weekend, tokenized equities can react before their home market opens.</p>
+  <div class="cols c3">
+    <div class="card"><h3>Moves come first</h3><p>A tokenized stock jumps 4% at 3 a.m. No headline, no filing, no analyst note yet.</p></div>
+    <div class="card"><h3>Alerts are noise</h3><p>Price alerts fire on everything, including thin order books, and explain nothing.</p></div>
+    <div class="card"><h3>AI answers are unsourced</h3><p>Chatbot "analysts" produce confident stories with invented facts. That's a liability with money on the line.</p></div>
+  </div>
+</section>
+
+<!-- 3 · The Ghost Event -->
+<section class="slide">
+  <div class="top"><div class="kicker">Our insight</div><div class="pg">03</div></div>
+  <h2>A <span class="accent">Ghost Event</span> is a move the market<br />made before anyone explained it.</h2>
+  <p class="lead" style="margin-bottom:26px">PRED opens one only when all three conditions hold. Anything else is logged with the reason and ignored.</p>
+  <div class="cols c3">
+    <div class="card"><div class="num">1</div><h3 style="margin-top:10px">Abnormal activity</h3><p>A statistically large move (|z| ≥ 3.5) confirmed by volume, on a liquid baseline, not a single trade on an empty book.</p></div>
+    <div class="card"><div class="num">2</div><h3 style="margin-top:10px">Wall Street closed</h3><p>NYSE calendar: nights, weekends, holidays and early closes.</p></div>
+    <div class="card"><div class="num">3</div><h3 style="margin-top:10px">Tokenized market live</h3><p>The Bitget instrument is online and actively trading, with fresh 1-minute data.</p></div>
+  </div>
+</section>
+
+<!-- 4 · How it works -->
+<section class="slide">
+  <div class="top"><div class="kicker">How it works</div><div class="pg">04</div></div>
+  <h2>Six agents, one lifecycle.</h2>
+  <div class="cols c6" style="margin-top:6px">
+    <div class="step"><b>DETECT</b><span>Live Bitget 1-min bars vs a 2-hour baseline</span></div>
+    <div class="step"><b>INVESTIGATE</b><span>SEC filings, news, peers, sibling tokens, BTC/ETH, market breadth</span></div>
+    <div class="step"><b>HYPOTHESIZE</b><span>6 competing catalysts, evidence-weighted probabilities</span></div>
+    <div class="step"><b>VERIFY</b><span>Official evidence or price behaviour, deadline at the U.S. open</span></div>
+    <div class="step"><b>PREDICT</b><span>Reaction range to the U.S. close from comparable events</span></div>
+    <div class="step"><b>LEARN</b><span>Scores direction, range and catalyst on every outcome</span></div>
+  </div>
+  <div class="cols c2" style="margin-top:28px">
+    <div class="card"><h3>Transparent, not a black box</h3><p>Every probability is prior + evidence weights → softmax, capped short of certainty, with a "why N%" breakdown and every revision kept.</p></div>
+    <div class="card"><h3>LLM as narrator, never as judge</h3><p>Claude or a Groq-hosted model writes the explanation from PRED's cited evidence only. It never sets numbers, confirms events or trades.</p></div>
+  </div>
+</section>
+
+<!-- 5 · Anatomy of a Ghost Event -->
+<section class="slide">
+  <div class="top"><div class="kicker">What the user sees</div><div class="pg">05</div></div>
+  <h2 style="margin-bottom:22px">Anatomy of a Ghost Event</h2>
+  <div class="cols c2">
+    <div class="ev">
+      <div class="ev-h">
+        <div class="kicker">Ghost Event · illustrative layout</div>
+        <div style="font-size:40px; font-weight:800; margin-top:8px">NVDA-PERP <span style="color:var(--good); font-size:28px">+4.8%</span></div>
+        <div class="muted" style="font-size:15px">Volume 9.0× baseline · US market CLOSED · Bitget LIVE</div>
+      </div>
+      <div class="ev-b">
+        <div class="row"><span>Company-specific catalyst</span><b>62%</b></div><div class="bar"><i style="width:62%; background:var(--company)"></i></div>
+        <div class="row"><span>Sector-wide repricing</span><b>18%</b></div><div class="bar"><i style="width:18%; background:var(--sector)"></i></div>
+        <div class="row"><span>Liquidity anomaly</span><b>9%</b></div><div class="bar"><i style="width:9%; background:var(--liquidity)"></i></div>
+        <div class="row"><span>Unknown / unexplained</span><b>11%</b></div><div class="bar"><i style="width:11%; background:var(--unknown)"></i></div>
+      </div>
+    </div>
+    <div>
+      <ul class="b">
+        <li><b>Evidence with provenance:</b> every item has a source, a timestamp and a link. "96% of the move not explained by peers [E7-5]".</li>
+        <li><b>Live timeline:</b> detection, investigation, each revision and the resolution, append-only.</li>
+        <li><b>Catalyst graph</b> linking the asset, its peers, crypto, filings and news.</li>
+        <li><b>Resolution:</b> CONFIRMED by an 8-K, INVALIDATED if it faded before the open, or UNRESOLVED · held.</li>
+        <li><b>Reaction estimate</b> only when history supports one; otherwise "insufficient live history".</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · Live on Bitget -->
+<section class="slide">
+  <div class="top"><div class="kicker">Built on Bitget</div><div class="pg">06</div></div>
+  <h2>Live today on real Bitget market data.</h2>
+  <div class="cols c3" style="margin-top:8px">
+    <div class="card"><div class="num">336</div><h3 style="margin-top:10px">instruments discovered</h3><p>Tokenized equities found from Bitget's own metadata (<code>isRwa</code>, <code>symbolType: stock</code>). No hard-coded symbols.</p></div>
+    <div class="card"><div class="num">219</div><h3 style="margin-top:10px">U.S. stocks monitored</h3><p>Matched to SEC registrants; polled every 15 s, with 1-minute candles for every name.</p></div>
+    <div class="card"><div class="num">24/7</div><h3 style="margin-top:10px">continuous, on Railway</h3><p>SQLite on a persistent volume, restart-safe, with health checks and honest connection status.</p></div>
+  </div>
+  <div class="card" style="margin-top:22px"><p style="font-size:17px"><b style="color:var(--ink)">Bitget Unified API v3</b> for instruments, tickers, candles and order book. <b style="color:var(--ink)">SEC EDGAR</b> for filings. <b style="color:var(--ink)">GDELT</b> with an automatic <b style="color:var(--ink)">Google News</b> backup for news. Zero runtime dependencies, Node.js 22.</p></div>
+  <div class="foot"><span>Figures observed on the production deployment, September 2026</span><span></span></div>
+</section>
+
+<!-- 7 · Integrity -->
+<section class="slide dark">
+  <div class="top"><div class="kicker" style="color:#aab0ff">Why trust it</div><div class="pg">07</div></div>
+  <h2>Honest by construction.</h2>
+  <div class="cols c2" style="margin-top:10px">
+    <ul class="b" style="color:#c9cbe0">
+      <li><b style="color:#fff">Zero synthetic data in live mode.</b> Missing fields are shown as n/a, never estimated.</li>
+      <li><b style="color:#fff">Confirmation needs proof:</b> an official release or a material SEC filing.</li>
+      <li><b style="color:#fff">No false certainty:</b> probabilities are capped and labelled as model estimates.</li>
+    </ul>
+    <ul class="b" style="color:#c9cbe0">
+      <li><b style="color:#fff">Self-scoring:</b> direction, range and catalyst accuracy, plus calibration, on every outcome.</li>
+      <li><b style="color:#fff">Graceful degradation:</b> sources report CONNECTED, DEGRADED or DISCONNECTED with the real reason.</li>
+      <li><b style="color:#fff">Isolated demo:</b> a separate, clearly SIMULATED replay for walkthroughs.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 8 · Execution with a human in the loop -->
+<section class="slide">
+  <div class="top"><div class="kicker">From intelligence to action</div><div class="pg">08</div></div>
+  <h2>Human-approved execution on Bitget.<br /><span class="accent">Agents never trade.</span></h2>
+  <div class="cols c2" style="margin-top:6px">
+    <div class="card">
+      <h3>Trade plan → review → approve → order</h3>
+      <p>PRED drafts a sized plan from a Ghost Event: side, quantity at Bitget's precision, stop, target, thesis and evidence. The operator reviews it and must press <b>Approve &amp; execute</b> with the exact confirmation phrase.</p>
+    </div>
+    <div class="card">
+      <h3>Safety built in</h3>
+      <p>The server rebuilds and rechecks every order against fresh prices, balance and per-order, per-position and daily limits. One order per plan, even on double clicks. A full audit trail. Disabled by default.</p>
+    </div>
+  </div>
+  <p class="muted" style="font-size:14px; margin-top:18px">Bitget Unified Trading API v3 (<code>/api/v3/trade/place-order</code>). Verified against a simulated exchange in the test suite and with read-only checks on the live account API.</p>
+</section>
+
+<!-- 9 · Differentiation -->
+<section class="slide">
+  <div class="top"><div class="kicker">Positioning</div><div class="pg">09</div></div>
+  <h2>Not a price alert. Not a trading bot.</h2>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th></th><th>Price alerts</th><th>News summarisers</th><th>AI trading bots</th><th style="color:var(--primary)">PRED</th></tr>
+    <tr><td>Catches moves before the news</td><td class="yes">yes</td><td class="no">no</td><td class="no">sometimes</td><td class="yes">yes</td></tr>
+    <tr><td>Explains the move with sources</td><td class="no">no</td><td class="no">after the fact</td><td class="no">no</td><td class="yes">yes, cited</td></tr>
+    <tr><td>Knows when Wall Street is closed</td><td class="no">no</td><td class="no">no</td><td class="no">rarely</td><td class="yes">NYSE calendar</td></tr>
+    <tr><td>Honest uncertainty and self-scoring</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td></tr>
+    <tr><td>Human stays in control of money</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">no</td><td class="yes">always</td></tr>
+  </table>
+</section>
+
+<!-- 10 · Who it's for -->
+<section class="slide">
+  <div class="top"><div class="kicker">Who it's for</div><div class="pg">10</div></div>
+  <h2>For anyone holding a stock<br />while its home market sleeps.</h2>
+  <div class="cols c3" style="margin-top:8px">
+    <div class="card"><h3>Active traders</h3><p>Off-hours context for tokenized equity moves on Bitget: signal vs noise, in seconds.</p></div>
+    <div class="card"><h3>Research &amp; risk desks</h3><p>An auditable record of what moved, when, and what explained it, with calibration data.</p></div>
+    <div class="card"><h3>Agents &amp; builders</h3><p>A verified-signal API (<code>/api/signals</code>) for downstream, risk-controlled agents.</p></div>
+  </div>
+</section>
+
+<!-- 11 · Roadmap -->
+<section class="slide">
+  <div class="top"><div class="kicker">What's next</div><div class="pg">11</div></div>
+  <h2>Roadmap</h2>
+  <div class="cols c2" style="margin-top:6px">
+    <ul class="b">
+      <li><b>Automatic earnings and corporate calendar</b> for scheduled catalysts.</li>
+      <li><b>More authoritative feeds:</b> investor-relations RSS and exchange notices.</li>
+      <li><b>Learned evidence weights</b> once live memory reaches statistical size.</li>
+    </ul>
+    <ul class="b">
+      <li><b>Alerts:</b> webhook and Telegram when a Ghost Event opens or resolves.</li>
+      <li><b>Bitget Agent Hub:</b> publish verified signals to external agents.</li>
+      <li><b>Multi-user execution</b> with per-user key custody and limits.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 12 · Close -->
+<section class="slide hero">
+  <div class="top"><div class="brand"><img src="../web/logo.png" alt="" /> PRED</div><div class="pg">12</div></div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center">
+    <div class="kicker">DETECT → INVESTIGATE → HYPOTHESIZE → VERIFY → PREDICT → LEARN</div>
+    <h1 style="margin-top:16px">The market moves first.<br /><span class="accent">PRED tells you why.</span></h1>
+    <p class="lead" style="margin-top:22px">Live on Bitget today. Source: <b>github.com/TeevincsCrypt/Pred</b></p>
+  </div>
+  <div class="foot"><span>Market intelligence, not investment advice.</span><span>Bitget AI Genesis · Season 2</span></div>
+</section>
+
+</body>
+</html>

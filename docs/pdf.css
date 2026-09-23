@@ -1,0 +1,36 @@
+/* Shared print styles for the PRED whitepaper and pitch deck (rendered to PDF by scripts/build-pdfs.mjs). */
+:root {
+  --ink: #0e0f1f;
+  --ink-2: #52566b;
+  --ink-3: #8a8ea3;
+  --line: #e4e3f0;
+  --primary: #3b3ff0;
+  --primary-soft: #eef0ff;
+  --lav-1: #f3efff;
+  --lav-2: #e3d9fd;
+  --good: #15803d;
+  --warn: #b45309;
+  --bad: #c0262d;
+  --company: #2a78d6;
+  --sector: #eb6834;
+  --macro: #1baf7a;
+  --liquidity: #eda100;
+  --scheduled: #4a3aa7;
+  --unknown: #9ca0b3;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: 'Liberation Sans', 'DejaVu Sans', Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.mono, code { font-family: 'DejaVu Sans Mono', 'Liberation Mono', monospace; }
+code { font-size: 0.88em; background: #f4f3fa; padding: 0 3px; border-radius: 3px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.02em; }
+.brand img { height: 30px; }
+.kicker { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--primary); }
+.muted { color: var(--ink-2); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
+.pill.live { background: #e9f8ef; color: var(--good); }
+.pill.warn { background: #fff5dc; color: var(--warn); }
+.pill.bad { background: #fdecec; color: var(--bad); }
+.pill.info { background: var(--primary-soft); color: var(--primary); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; }

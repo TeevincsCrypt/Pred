@@ -64,6 +64,12 @@ test('live server: real-shaped discovery, market state, honest status, SSE, no s
     assert.match(await page('/'), /Find what the market knows/, '/ is the landing page');
     assert.match(await page('/app'), /id="connList"/, '/app is the live dashboard');
     assert.match(await page('/about'), /Find what the market knows/);
+    for (const doc of ['/whitepaper.pdf', '/pitch-deck.pdf']) {
+      const r = await fetch(`http://127.0.0.1:${port}${doc}`);
+      assert.equal(r.status, 200, doc);
+      assert.equal(r.headers.get('content-type'), 'application/pdf', doc);
+      assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0, 5).toString(), '%PDF-', doc);
+    }
 
     const res = await fetch(`http://127.0.0.1:${port}/api/stream`);
     const reader = res.body.getReader();
