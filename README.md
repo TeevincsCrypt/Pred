@@ -82,6 +82,7 @@ If nothing is abnormal, the dashboard says **"No active Ghost Events detected."*
 | **Bitget** | price, volume, volatility and spread anomalies; related-asset, market-wide and BTC/ETH moves | as above |
 | **SEC EDGAR** (`www.sec.gov/files/company_tickers.json`, `data.sec.gov/submissions/CIK##########.json`) | accession number, form, company, filing date, acceptance time, items, URL | required `SEC_USER_AGENT` (without it the source reports **NOT CONFIGURED**), ≤ 6 req/s, timeouts, retries, shape validation, de-duplication by accession |
 | **GDELT DOC 2.0** | title, source domain, publication time, URL, matched entities, relevance | 1 request per 5.5 s (GDELT's limit), plain-text rate-limit replies detected, 4-minute cache, de-duplication by URL and title |
+| **Google News RSS** (backup, keyless) | headline, publisher domain, publication time, link | used automatically whenever GDELT is paused, rate-limited or blocking the server's IP; same 15-min cache and backoff; evidence records `via Google News` |
 | **Calendar** (`data/calendar.json`, maintained by you) | scheduled events | labeled **SCHEDULED**. It is never treated as an observed catalyst |
 | Social / web | — | shown as **not connected**; there is no connector |
 
