@@ -143,6 +143,8 @@ PRED recommends one of **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. Its agent
 
 ### 10. Human-approved execution
 
+> Human-approved execution through Bitget’s API is built and tested against a simulated Bitget, and disabled by default. Every order needs explicit human approval, fresh price and balance checks, and cannot be placed twice. Agents cannot trade.
+
 PRED can submit **real** Bitget orders, but **only after a human approves a specific trade plan**. No agent, background loop, SSE stream or webhook can place an order. Live execution is **off by default** (`PRED_TRADING_ENABLED=false`).
 
 ```

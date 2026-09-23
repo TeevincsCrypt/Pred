@@ -193,7 +193,7 @@ p_k     = softmax(score_k / 1.5)              (≤ 0.90; ≤ 0.95 if authoritati
   <li><b>One order per plan.</b> An atomic database claim makes concurrent approvals produce exactly one order. A timeout is reconciled by client order ID, never resent.</li>
   <li><b>Accurate status.</b> SUBMITTED means Bitget accepted the order; FILLED comes only from Bitget's order status. Every step is recorded in an audit trail.</li>
 </ul>
-<p>Execution is <b>disabled by default</b> and requires deliberate configuration. It has been verified with an automated test suite against a simulated Bitget endpoint, and with read-only checks against the live Bitget account API.</p>
+<p class="box"><b>Status.</b> Human-approved execution through Bitget’s API is built and tested against a simulated Bitget, and disabled by default. Every order needs explicit human approval, fresh price and balance checks, and cannot be placed twice. Agents cannot trade.</p>
 
 <h2><span class="n">12</span> Integrity principles</h2>
 <div class="grid2">
