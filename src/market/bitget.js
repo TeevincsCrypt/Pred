@@ -18,9 +18,9 @@ const SYMBOL_RE = /^[A-Z0-9_]{2,40}$/;
 
 export class BitgetError extends Error {}
 
-export function createBitgetClient({ fetchImpl = fetch, baseUrl = BITGET_BASE_URL, minIntervalMs = 120 } = {}) {
+export function createBitgetClient({ fetchImpl = fetch, baseUrl = BITGET_BASE_URL, minIntervalMs = 120, timeoutMs = Number(process.env.BITGET_TIMEOUT_MS) || 8000 } = {}) {
   // ~8 req/s, well under Bitget's public market-data limits.
-  const http = createHttp({ name: 'bitget', minIntervalMs, timeoutMs: 8000, retries: 2, fetchImpl });
+  const http = createHttp({ name: 'bitget', minIntervalMs, timeoutMs, retries: 2, fetchImpl });
 
   async function get(path, params = {}) {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();

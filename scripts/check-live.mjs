@@ -19,9 +19,19 @@ const ok = (name, detail) => {
   results.push({ name, ok: true });
   console.log(`✓ ${name.padEnd(13)} ${detail}`);
 };
+const HINTS = [
+  [/bitget: timeout|ENOTFOUND|ECONNREFUSED|ECONNRESET|fetch failed/i, 'this machine cannot reach Bitget — test with `curl.exe -m 10 https://api.bitget.com/api/v3/public/time`; if that also fails, your ISP/DNS/firewall blocks it (try DNS 1.1.1.1 or a VPN) or raise BITGET_TIMEOUT_MS. The Railway deployment has its own network.'],
+];
 const fail = (name, err) => {
   results.push({ name, ok: false });
-  console.log(`✗ ${name.padEnd(13)} ${err?.message || err}`);
+  const msg = String(err?.message || err);
+  const hint = HINTS.find(([re]) => re.test(msg))?.[1];
+  console.log(`✗ ${name.padEnd(13)} ${msg}${hint ? `\n                → ${hint}` : ''}`);
+};
+// Reachable but throttled: reported, not counted as a failure.
+const warn = (name, detail) => {
+  results.push({ name, ok: true, warn: true });
+  console.log(`⚠ ${name.padEnd(13)} ${detail}`);
 };
 const step = async (name, fn) => {
   try {
@@ -82,12 +92,31 @@ await step('SEC', async () => {
   return `${p.note} · ${sample?.underlying || 'NVDA'}: ${r.note}`;
 });
 
-await step('GDELT', async () => {
-  const news = createNewsSource();
-  const r = await news.collect({ asset: { ticker: sample?.key || 'NVDA', company: sample?.company || 'NVIDIA', newsTerms: sample?.newsTerms?.length ? sample.newsTerms : ['NVIDIA'] }, now: Date.now() });
-  if (r.status !== 'ok') throw new Error(r.note);
-  return r.note;
-});
+{
+  // GDELT allows one request per ~5s per IP and answers faster callers (or
+  // busy shared IPs) with HTTP 429. That proves it is reachable, so after
+  // one spaced retry a 429 is a warning, not a failure.
+  const asset = { ticker: sample?.key || 'NVDA', company: sample?.company || 'NVIDIA', newsTerms: sample?.newsTerms?.length ? sample.newsTerms : ['NVIDIA'] };
+  const attempt = async () => {
+    const r = await createNewsSource().collect({ asset, now: Date.now() });
+    if (r.status !== 'ok') throw new Error(r.note);
+    return r.note;
+  };
+  try {
+    ok('GDELT', await attempt());
+  } catch (err) {
+    if (!/429|rate limited/i.test(String(err.message))) fail('GDELT', err);
+    else {
+      await new Promise((r) => setTimeout(r, 20_000));
+      try {
+        ok('GDELT', await attempt());
+      } catch (err2) {
+        if (/429|rate limited/i.test(String(err2.message))) warn('GDELT', 'reachable but rate-limited (HTTP 429) from this IP — PRED spaces and caches GDELT calls and retries automatically; re-run in a few minutes');
+        else fail('GDELT', err2);
+      }
+    }
+  }
+}
 
 await step('Database', async () => {
   const db = openDb(config.dbPath);
