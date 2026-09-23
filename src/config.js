@@ -14,7 +14,9 @@ export const config = {
 
   bitgetBaseUrl: process.env.BITGET_BASE_URL || 'https://api.bitget.com',
   assets: list(process.env.PRED_ASSETS),
-  maxAssets: int(process.env.PRED_MAX_ASSETS, 30),
+  // How many eligible U.S.-listed instruments to watch, ranked by 24h turnover.
+  // "all" watches every eligible one (candle polling scales to match).
+  maxAssets: String(process.env.PRED_MAX_ASSETS).toLowerCase() === 'all' ? Infinity : int(process.env.PRED_MAX_ASSETS, 30),
   // Both Bitget categories that carry tokenized U.S. equities: spot RWA tokens
   // and USDT-margined stock perpetuals.
   categories: list(process.env.PRED_MONITOR_CATEGORIES) || ['SPOT', 'USDT-FUTURES'],

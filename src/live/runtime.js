@@ -101,6 +101,8 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       ghostCondition: ms.tokenized === 'LIVE' && !ms.traditional.usMarketOpen,
       assetsDiscovered: market.assets.length,
       assetsMonitored: monitored.length,
+      assetsEligible: market.eligibleCount,
+      maxAssets: Number.isFinite(config.maxAssets) ? config.maxAssets : 'all',
       unmatchedAssets: market.unmatched,
       activeGhostEvents: events.filter((e) => !e.outcome && ['DETECTED', 'INVESTIGATING', 'HYPOTHESIS_CREATED', 'AWAITING_CONFIRMATION'].includes(e.state)).length,
       totalEvents: events.length,
