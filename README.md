@@ -159,6 +159,7 @@ The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessi
 | `PRED_MODE` | `live` | `demo` runs only the simulated demo |
 | `PRED_DEMO_ENABLED` | `false` | also expose the simulated demo at `/demo` |
 | `BITGET_BASE_URL` | `https://api.bitget.com` | |
+| `BITGET_TIMEOUT_MS` | `8000` | per-request timeout; raise on slow networks |
 | `PRED_ASSETS` | all discovered | e.g. `NVDA,TSLA,AAPL,AMZN` (underlying, base coin or symbol) |
 | `PRED_MAX_ASSETS` | 30 | cap when `PRED_ASSETS` is unset (ranked by 24h turnover) |
 | `PRED_MONITOR_CATEGORIES` | `SPOT,USDT-FUTURES` | restrict to `SPOT` to ignore stock perps |
