@@ -27,6 +27,13 @@ export function measure(candles, { windowBars = 5, baselineBars = 120, minBaseli
   const win = candles.slice(-windowBars);
   const base = candles.slice(-(windowBars + baselineBars), -windowBars);
   const anchor = base[base.length - 1];
+  // The window must be contiguous 1-minute bars following the anchor; a data
+  // gap (e.g. after a restart or a trading halt) must never read as a move.
+  let prevTs = anchor.ts;
+  for (const b of win) {
+    if (b.ts - prevTs > 60_000 * 1.5) return null;
+    prevTs = b.ts;
+  }
 
   const baseRets = logReturns(base.map((c) => c.close));
   const sigma = Math.max(std(baseRets), 1e-4);
@@ -69,7 +76,7 @@ export function spreadChange(quotesBaseline, quotesRecent) {
 }
 
 // Cross-asset context over the same window.
-export function crossAsset(store, m, peers, cryptoRefs) {
+export function crossAsset(store, m, peers, cryptoRefs, marketWide = []) {
   const peerMoves = peers
     .map((p) => {
       const chg = store.changePct(p, m.windowStart, m.windowEnd);
@@ -94,9 +101,13 @@ export function crossAsset(store, m, peers, cryptoRefs) {
     })
     .filter(Boolean);
 
+  const wide = marketWide.map((k) => store.changePct(k, m.windowStart, m.windowEnd)).filter((x) => x != null);
+  const marketWideMove = wide.length
+    ? { n: wide.length, avgRetPct: round(mean(wide), 3), breadth: round(wide.filter((x) => Math.sign(x) === Math.sign(m.retPct) && Math.abs(x) >= 0.1).length / wide.length, 2) }
+    : null;
   const avgPeer = peerMoves.length ? mean(peerMoves.map((p) => p.retPct)) : null;
   const residualPct = avgPeer == null ? null : m.retPct - avgPeer;
-  return { withCorr, peerMoves, crypto, avgPeerRetPct: avgPeer == null ? null : round(avgPeer, 3), residualPct: residualPct == null ? null : round(residualPct, 3) };
+  return { withCorr, peerMoves, crypto, marketWide: marketWideMove, avgPeerRetPct: avgPeer == null ? null : round(avgPeer, 3), residualPct: residualPct == null ? null : round(residualPct, 3) };
 }
 
 export function anomalyScore(m, spread) {
@@ -120,7 +131,8 @@ export function createDetector(opts = {}) {
   return {
     config: cfg,
     // Returns an anomaly object or null.
-    evaluate({ ticker, store, now, market, peers = [], cryptoRefs = {} }) {
+    // tradability: { status: 'LIVE'|'CLOSED'|'UNKNOWN', reason } for the tokenized market.
+    evaluate({ ticker, store, now, market, peers = [], cryptoRefs = {}, marketWide = [], tradability = { status: 'LIVE' }, siblings = [] }) {
       const m = measure(store.candles(ticker), cfg);
       if (!m) return null;
       const quotesBase = store.quotesSince(ticker, m.windowStart - cfg.baselineBars * 60_000).filter((q) => q.ts < m.windowStart);
@@ -132,16 +144,29 @@ export function createDetector(opts = {}) {
       const triggered = (strongMove && m.volumeRatio >= cfg.minVolumeRatio) || (Math.abs(m.retPct) >= cfg.minAbsMovePct && score >= cfg.scoreThreshold);
       if (!triggered) return null;
       if (now - (lastFired.get(ticker) ?? -Infinity) < cfg.cooldownMs) return null;
-      if (market.usMarketOpen) return null; // regular session open → not a Ghost Event
+      // A Ghost Event needs all three: abnormal activity (above), the
+      // traditional market closed, and the tokenized market actually trading.
+      if (market.usMarketOpen) return { suppressed: true, ticker, reason: 'U.S. regular session open — not a Ghost Event', measurements: m };
+      if (tradability.status !== 'LIVE') return { suppressed: true, ticker, reason: `tokenized market ${tradability.status}: ${tradability.reason || ''}`.trim(), measurements: m };
+      if (tradability.thin) return { suppressed: true, ticker, reason: `thin market (${tradability.reason})`, measurements: m };
 
       lastFired.set(ticker, now);
-      const cross = crossAsset(store, m, peers, cryptoRefs);
+      const cross = crossAsset(store, m, peers, cryptoRefs, marketWide);
+      const sib = new Set(siblings);
       return {
         ticker,
         detectedAt: now,
         marketSession: market.session,
+        priority: 'ELEVATED',
+        conditions: { abnormalActivity: true, traditionalMarketClosed: true, tokenizedMarketLive: true },
         measurements: { ...m, spread, score, severity: severity(score) },
-        cross: { peers: cross.withCorr(store.candles(ticker).filter((c) => c.ts <= m.windowStart).slice(-cfg.baselineBars)), crypto: cross.crypto, avgPeerRetPct: cross.avgPeerRetPct, residualPct: cross.residualPct },
+        cross: {
+          peers: cross.withCorr(store.candles(ticker).filter((c) => c.ts <= m.windowStart).slice(-cfg.baselineBars)).map((p) => ({ ...p, sibling: sib.has(p.ticker) })),
+          crypto: cross.crypto,
+          marketWide: cross.marketWide,
+          avgPeerRetPct: cross.avgPeerRetPct,
+          residualPct: cross.residualPct,
+        },
       };
     },
     reset() {

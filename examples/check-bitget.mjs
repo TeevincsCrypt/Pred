@@ -1,14 +1,10 @@
-// Quick connectivity check: which tokenized equities does Bitget list, and
-// can PRED pull 1-minute candles for them?
-import { createBitgetClient, resolveSymbols } from '../src/market/bitget.js';
-import { ASSETS } from '../src/market/universe.js';
+// Which tokenized equities does Bitget list right now? (Unified v3 API)
+import { createBitgetClient } from '../src/market/bitget.js';
+import { buildUniverse } from '../src/market/live-universe.js';
+import { loadRelationships } from '../src/market/relationships.js';
 
 const client = createBitgetClient();
-const listed = await client.symbols();
-const map = resolveSymbols(listed, ASSETS);
-console.log('Resolved tokenized equities:', map);
-for (const [ticker, symbol] of Object.entries(map)) {
-  const bars = await client.candles(symbol, { limit: 5 });
-  const t = await client.ticker(symbol);
-  console.log(`${ticker.padEnd(6)} ${symbol.padEnd(12)} last=${t.last} bid=${t.bid} ask=${t.ask} bars=${bars.length}`);
-}
+const [spot, futures] = await Promise.all([client.instruments('SPOT'), client.instruments('USDT-FUTURES').catch(() => [])]);
+const { assets, monitored } = buildUniverse({ spot, futures, relationships: loadRelationships() });
+console.log(`${spot.length} spot instruments, ${assets.length} tokenized-equity instruments (${monitored.length} monitorable)\n`);
+for (const a of assets) console.log(`${a.symbol.padEnd(16)} ${String(a.category).padEnd(13)} ${String(a.status).padEnd(12)} ${a.key.padEnd(12)} ${a.issuer || ''} ${a.company}`);

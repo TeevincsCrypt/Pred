@@ -6,7 +6,7 @@
 
 PRED provides 24/7 market event intelligence for tokenized U.S. equities. It is **not** a stock predictor and **not** a trading bot.
 
-Tokenized equities trade around the clock, while the underlying U.S. market is open for only 6.5 hours a day. Outside those hours, price and volume can react before the traditional market opens and before any news explains the move. PRED detects these unexplained moves, called **Ghost Events**. It then turns each one into structured, testable hypotheses, tracks them until they are confirmed or invalidated, estimates the likely market reaction, and learns from the outcome.
+Tokenized equities on Bitget trade around the clock, while the underlying U.S. market is open for only 6.5 hours a day. Outside those hours, price and volume can react before Wall Street opens and before any news explains the move. PRED watches Bitget's real market data continuously. When a tokenized equity moves abnormally while the U.S. market is closed, PRED opens a **Ghost Event**. It then investigates with real evidence (SEC EDGAR, GDELT news), forms competing catalyst hypotheses, tracks them until they are confirmed, invalidated or left unresolved, estimates the reaction, and learns from the outcome.
 
 ```
 DETECT → INVESTIGATE → HYPOTHESIZE → VERIFY → PREDICT → LEARN
@@ -19,185 +19,199 @@ Built for the **Bitget AI Genesis Season 2** hackathon.
 ## Quick start
 
 ```bash
-node --version        # >= 20
-npm start             # landing page http://localhost:8787 · dashboard http://localhost:8787/app
-npm test              # 22 tests: detector, calendar, hypotheses, verifier, memory, sources, demo sessions, full demo lifecycle
-npm run demo:cli      # the whole lifecycle, headless, printed as a timeline
+node --version            # >= 22.5 (uses the built-in node:sqlite)
+npm start                 # PRED LIVE on http://localhost:8787
+npm run check:live        # production health check against the real endpoints
+npm test                  # 32 tests
 ```
 
-PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is only used when `ANTHROPIC_API_KEY` is set.
+`/` opens straight into **PRED LIVE**. `/about` is the product page. The simulated demo lives only at `/demo` and is **off** unless you set `PRED_DEMO_ENABLED=true` or run `npm run start:demo`.
 
-Open the dashboard at `/app` and press **Start demo → / Next step** (or **Auto-play**). You can also press → or Space to advance. Each browser gets its **own demo session**, so several judges can run the demo at the same time without interfering.
+PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is used only when `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are set.
 
-## What a judge sees in Demo mode (15 steps, deterministic, clearly labeled SIMULATED)
+---
 
-| # | Step | What actually happens |
-|---|------|------------------------|
-| 1 | Select NVDAx | NVDAx, its semiconductor peers and BTC are monitored |
-| 2 | Start monitoring | It is **Sunday 17:00 ET, so the U.S. market is closed**. 3 hours of history load, then 1-minute bars stream in |
-| 3 | Trigger abnormal movement | NVDAx rises +2.34% on +640% volume. The **Detector genuinely detects it**; nothing about the detection is scripted |
-| 4 | Ghost Event | `GHOST EVENT #184 · NVDAx +2.34% · Volume +640% · US MARKET CLOSED · CATALYST: UNKNOWN` |
-| 5 | Investigate | 10 investigation channels run. Every source reports a status, including the ones that found nothing |
-| 6 | Evidence graph | The Catalyst Graph builds itself: asset → anomalies → correlations → information signals |
-| 7 | Hypotheses | Company-specific 67% · Unknown 15% · Sector 7% · … each with evidence for and against, and the weights used |
-| 8 | Confidence | State becomes AWAITING CONFIRMATION. Action posture: WAIT |
-| 9 | Fast-forward | Overnight, the move holds and discussion accelerates. **New revisions are appended; earlier ones are never overwritten** |
-| 10 | Reveal | A *simulated* official NVIDIA release appears on the simulated news feed. The Verifier finds it and promotes it to authoritative evidence |
-| 11 | Confirmed | **CATALYST CONFIRMED**, showing the original hypothesis (67%), the confirming evidence, and detection → confirmation time (13h 50m) |
-| 12 | Reaction prediction | Expected reaction: positive, +1.66% → +3.87%, estimate +2.36%, confidence 85%, from 26 comparable events |
-| 13 | Actual reaction | Time runs through Monday's session. At the 16:00 ET close the actual reaction is **+3.44%**: direction ✓, range ✓, catalyst ✓ |
-| 14 | PRED Memory | The event is stored as #184 and becomes a comparable for future events |
-| 15 | Accuracy | Direction, catalyst and range accuracy, time to confirmation, false-positive rate, failure attribution, and calibration over time |
+## Live mode (default)
 
-The demo reaches "confirmed" and "correct" because the scenario was written that way. The 183 seeded memory events, however, are a **simulated backtest**: synthetic events with a hidden true cause, run through PRED's real hypothesis, reaction and evaluation code (walk-forward). Their accuracy and calibration numbers are real measurements of PRED's models, on synthetic data. The seed includes plenty of wrong calls: 13 false hypotheses, 26 liquidity anomalies, 87 unresolved events, and a Brier score of about 0.20.
+### 1. Bitget integration: Unified API v3, public, no key
 
-## Live mode
+| Purpose | Endpoint |
+|---|---|
+| Server time / connectivity | `GET /api/v3/public/time` |
+| Instrument discovery + metadata + trading status | `GET /api/v3/market/instruments?category=SPOT` and `?category=USDT-FUTURES` |
+| Ticker: last price, 24h change, 24h volume & turnover, best bid/ask (spread) | `GET /api/v3/market/tickers?category=SPOT` (every spot ticker in one call) |
+| 1-minute candles (K-lines) | `GET /api/v3/market/candles?category=&symbol=&interval=1m&limit=` |
+| Order book (on request) | `GET /api/v3/market/orderbook?category=&symbol=&limit=` |
 
-LIVE mode connects to **Bitget's public market-data API (spot v2)**:
+**Tokenized equities are discovered, never assumed.** Bitget flags them in the instrument response:
+- **Spot tokenized stocks**: `isRwa: "YES"`. These are xStocks (`NVDAXUSDT`, `TSLAXUSDT`, …) and Ondo tokens (`NVDAONUSDT`, `SPYONUSDT`, …).
+- **Stock perpetuals**: `USDT-FUTURES` instruments with `symbolType: "stock"`. They are listed in `/api/assets` and monitored only when `PRED_MONITOR_CATEGORIES` includes `USDT-FUTURES`.
 
-- It discovers tokenized-equity symbols from `/api/v2/spot/public/symbols`. Candidates are `NVDAX`, `NVDAON`, and similar; set `PRED_SYMBOL_MAP=NVDAx=NVDAXUSDT,...` to override.
-- It backfills and polls 1-minute candles from `/api/v2/spot/market/candles` and quotes (bid/ask for spread) from `/api/v2/spot/market/tickers`.
-- News comes from GDELT DOC 2.0 (keyless), filings from **SEC EDGAR** (set `SEC_USER_AGENT`), and scheduled events from a calendar file you maintain (`data/calendar.json`, see `data/calendar.example.json`).
-- Social / web signals are shown as **not connected**. PRED shows a missing source as missing and does not invent one.
+Only listed instruments appear in the UI and in `/api/assets`. `PRED_ASSETS=NVDA,TSLA,AAPL,AMZN` can narrow the list. It matches by underlying ticker, base coin or symbol, and any requested ticker that Bitget does not list is reported as unmatched instead of being faked. Default response shapes follow the official typings (`bitget-api` SDK v3 types: `InstrumentV3`, `TickerV3`, `CandlestickV3`).
 
-If Bitget is unreachable, the UI says so ("Market data: Bitget spot API · unreachable") and **no data is simulated in LIVE mode**. Live events persist to `data/memory-live.json`. Live memory starts empty, so the Reaction Agent returns "insufficient history" until real outcomes accumulate. Set `PRED_LIVE_BOOTSTRAP_SEED=1` to borrow the simulated backtest as comparables; those records keep their SIMULATED label.
+### 2. Market engine: Bitget → client → normalizer → rolling market state → Detector
 
-```bash
-npm run check:bitget   # which tokenized equities Bitget lists + candle/ticker check
-```
+`src/market/market-engine.js` runs three independent loops. A failure in one never stops the others, and a failed request never crashes the server.
 
-| Env var | Default | Purpose |
+| Loop | Default | Env |
 |---|---|---|
-| `PORT` | 8787 | HTTP port |
-| `PRED_LIVE` | `1` | `0` disables the Bitget poller |
-| `PRED_MONITORED` | `NVDAx,AMDx,AVGOx,TSMx,TSLAx,COINx` | monitored tickers (see `src/market/universe.js`) |
-| `PRED_POLL_MS` | 20000 | Bitget poll interval |
-| `PRED_SYMBOL_MAP` | — | explicit ticker → Bitget symbol mapping |
-| `SEC_USER_AGENT` | — | required by SEC EDGAR (name + contact email) |
-| `ANTHROPIC_API_KEY` | — | enables the Claude analyst narratives |
-| `PRED_CLAUDE_MODEL` | `claude-opus-5` | analyst model |
-| `PRED_CALENDAR` | `data/calendar.json` | scheduled-events file |
+| Market poll: all spot tickers (1 request) + due 1m candles | 15 s | `PRED_POLL_INTERVAL_MS` |
+| Detector: evaluates every monitored asset | 30 s | `PRED_DETECTOR_INTERVAL_MS` |
+| Asset refresh: instrument discovery | 15 min | `PRED_ASSET_REFRESH_MS` |
 
-## Architecture
+Requests are spaced to roughly 8 per second, well under Bitget's public limits. They retry with exponential backoff and jitter on network errors, 429 and 5xx, and honour `Retry-After`. Only **closed** 1-minute candles are stored.
 
-```mermaid
-flowchart LR
-  subgraph Sources
-    BG[Bitget spot API v2<br/>candles · tickers]:::live
-    NEWS[GDELT news]:::live
-    SEC[SEC EDGAR]:::live
-    CAL[Event calendar]:::live
-    SIM[Simulated tape + scripted feeds<br/>demo only]:::sim
-  end
+For each asset, PRED keeps: latest price, previous price, percentage change, 24h volume and turnover, rolling volume baseline (2-hour median), volume anomaly ratio, 1-minute volatility, spread, tokenized-market status, real timestamps and candle history. **Any field Bitget does not provide is `null` and shown as n/a.** Nothing is estimated or filled in.
 
-  BG --> DET
-  SIM --> DET
-  DET[Detector<br/>price z · volume ratio · volatility · spread · peer residual]
-  DET -- Ghost Event --> INV[Investigator<br/>10 channels, every check logged]
-  NEWS --> INV
-  SEC --> INV
-  CAL --> INV
-  MEM[(PRED Memory)] -- similar past events --> INV
-  INV --> HYP[Hypothesis Agent<br/>transparent log-odds scoring]
-  HYP --> VER[Verifier<br/>support / contradict · authority · follow-through]
-  VER -- new evidence --> HYP
-  VER -- confirmed or ≥70% --> RX[Reaction Agent<br/>comparable-event range]
-  MEM -- comparables --> RX
-  RX --> MA[Memory Agent<br/>prediction vs reality · failure attribution · calibration]
-  MA --> MEM
-  VER -.-> SIG[/api/signals<br/>verified signal + risk policy/]
-  SIG -.-> EXE[Separate execution agent<br/>e.g. Bitget Agent Hub — not part of PRED]
-  HYP -.-> LLM[Claude analyst — optional<br/>narrative only]:::ai
+### 3. When a Ghost Event is opened
 
-  classDef live fill:#0b2a16,stroke:#4ade80,color:#fff
-  classDef sim fill:#2a2206,stroke:#fab219,color:#fff
-  classDef ai fill:#1d1a33,stroke:#b4acf5,color:#fff
-```
+The Detector compares the last 5 one-minute bars against a 120-bar baseline. It looks at the price z-score, the volume ratio, intrabar volatility, the spread change, the residual move not explained by peers, market-wide breadth, and the move of the same stock on a different token issuer. A Ghost Event opens **only** when all three of these hold:
 
-### Six agents, each with one job
+1. **Abnormal activity**: |z| ≥ 3.5 with volume ≥ 2.5× baseline, or a composite score ≥ 6, together with a move of at least 0.6%.
+2. **Traditional market closed**: according to the NYSE calendar in `src/market/hours.js`, which includes weekends, 2025–2027 holidays and 13:00 early closes.
+3. **Tokenized market LIVE**: the Bitget instrument is `online`, the last candle is fresh and there were trades in the last 15 minutes. It also must not be a thin market (`PRED_MIN_TURNOVER_USD`).
 
-| Agent | File | Job |
+An abnormal move that fails condition 2 or 3 is logged as "not a Ghost Event" with the reason, and no event is opened. A data gap, for example after a restart or a trading halt, is never read as a price move. Qualifying events get **ELEVATED** priority.
+
+If nothing is abnormal, the dashboard says **"No active Ghost Events detected."** That is a normal, valid state.
+
+### 4. Real evidence
+
+| Source | What PRED stores | Hardening |
 |---|---|---|
-| **Detector** | `src/agents/detector.js` | For a 5-minute window against a 120-bar baseline, measures the price z-score, volume ratio (vs. median), intrabar volatility ratio, spread change, and peer/crypto moves with the residual move. It proposes a Ghost Event only when the U.S. regular session is closed |
-| **Investigator** | `src/agents/investigator.js` | Converts measurements into evidence and runs information sources in parallel with timeouts. It records each source's status (`ok` / `unavailable` / `not_configured`) and emits an explicit "no coverage found" item instead of silence |
-| **Hypothesis Agent** | `src/agents/hypothesis.js` | Six catalyst categories. Each evidence item adds a signed log-odds weight (`signalsFor`); scores go through a softmax at temperature 1.5, are capped at 90% until authoritative evidence exists, and every category keeps a floor. Output: probability, evidence for and against (with weights), confidence, affected assets, and implication |
-| **Verifier** | `src/agents/verifier.js` | Classifies new evidence as SUPPORTS / CONTRADICTS / NEUTRAL, promotes official releases and 8-K/6-K filings to authoritative evidence, and checks price retention at +60 and +180 minutes. It judges the hypothesis that was **leading before** the authoritative evidence arrived |
-| **Reaction Agent** | `src/agents/reaction.js` | Weighted 20th/50th/80th percentiles of comparable outcomes. Before confirmation, the reference class is "events where PRED initially led with this category" (which prices in being wrong). After confirmation, it is "events confirmed as this category" |
-| **Memory Agent** | `src/agents/memory.js` | Persists every event and scores direction, range and catalyst accuracy, time to confirmation, and false-positive rate. It attributes failures to one of 7 categories and reports calibration (a reliability diagram plus Brier score over time) |
+| **Bitget** | price, volume, volatility and spread anomalies; related-asset, market-wide and BTC/ETH moves | as above |
+| **SEC EDGAR** (`www.sec.gov/files/company_tickers.json`, `data.sec.gov/submissions/CIK##########.json`) | accession number, form, company, filing date, acceptance time, items, URL | required `SEC_USER_AGENT` (without it the source reports **NOT CONFIGURED**), ≤ 6 req/s, timeouts, retries, shape validation, de-duplication by accession |
+| **GDELT DOC 2.0** | title, source domain, publication time, URL, matched entities, relevance | 1 request per 5.5 s (GDELT's limit), plain-text rate-limit replies detected, 4-minute cache, de-duplication by URL and title |
+| **Calendar** (`data/calendar.json`, maintained by you) | scheduled events | labeled **SCHEDULED**. It is never treated as an observed catalyst |
+| Social / web | — | shown as **not connected**; there is no connector |
 
-The **engine** (`src/core/engine.js`) runs the lifecycle state machine: `DETECTED → INVESTIGATING → HYPOTHESIS_CREATED → AWAITING_CONFIRMATION → CONFIRMED / INVALIDATED / UNRESOLVED`. Timelines, hypothesis revisions and predictions are **append-only**. You can step through every revision in the UI.
+Every evidence item carries a class (**OBSERVED**, **SCHEDULED** or **HISTORICAL**) and a provenance tag. URLs are validated as `http(s)` before they reach the browser.
 
-### Data provenance is explicit everywhere
+Correlated assets come from a configurable relationship map (`src/market/relationships.js`, override with `PRED_RELATIONSHIPS_FILE`). The map is applied only to instruments Bitget actually lists. Companies not in the map still get their name and CIK from SEC's official directory, and they are compared against the market-wide move of all live tokenized equities.
 
-Every evidence item, memory record and graph node carries one of these labels:
+### 5. Hypotheses, verification, lifecycle
 
-- `LIVE`: real-time data from Bitget, GDELT or EDGAR
-- `HISTORICAL`: from PRED Memory
-- `SIMULATED`: demo tape, scripted feeds, or the backtest seed
-- `AI HYPOTHESIS`: model output (hypotheses, narratives, estimates)
+The hypothesis model is still the transparent, deterministic evidence-weighted model (`MODEL_VERSION = pred-hyp-1.1.0`). Each hypothesis shows:
+- the evidence for and against it, with log-odds weights and sources
+- the source count
+- confidence and its change since the previous revision
+- a timestamp and the model version
+- a "why N%" breakdown: prior + weights → score → softmax (T = 1.5), capped short of certainty
 
-Probabilities are labeled as *model confidence estimates*, and reaction outputs as *model estimates, not price targets*.
+Evidence of one kind has diminishing returns, so 30 headlines about a mega-cap cannot add up to certainty. Headlines published before the move count only as background.
 
-### Optional action layer
+The **Verifier** re-checks open events every 5 minutes. It re-runs SEC and GDELT and checks whether the price held or reverted at +60 and +180 minutes.
+- An official company release or an 8-K/6-K → **CONFIRMED**, or **INVALIDATED** if a different catalyst had been leading.
+- A full reversal that turns the model toward a liquidity explanation → **INVALIDATED**.
+- No authoritative evidence by the first regular-session close (or `PRED_VERIFY_TIMEOUT_MS`) → **UNRESOLVED**.
 
-PRED recommends one of four postures: **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. It never places orders. A `CONSIDER_TRADE` posture requires a confirmed catalyst, reaction confidence of at least 60%, and an estimated move of at least 1% before the horizon. That signal is published at `GET /api/signals` together with a **risk policy** the consuming agent must enforce: maximum notional, maximum position as a percentage of equity, stop-loss, expiry at the horizon, human approval above a threshold, and a kill switch. `examples/execution-agent.mjs` is a dry-run reference consumer that shows how a separate Bitget Agent Hub execution agent would plug in.
+PRED never forces a confirmation.
 
-### Claude analyst (optional)
+Lifecycle: `DETECTED → INVESTIGATING → HYPOTHESIS_CREATED → AWAITING_CONFIRMATION → CONFIRMED | INVALIDATED | UNRESOLVED`. Every transition, evidence item, hypothesis revision, prediction, resolution, outcome and evaluation is appended to an audit log. Nothing is ever overwritten.
 
-With `ANTHROPIC_API_KEY` set, each hypothesis revision gets a short narrative from Claude. The narrative must cite evidence IDs and may use **only** the collected evidence. It never changes the probabilities, which come from the auditable scoring model. Without a key, PRED writes a deterministic template narrative. Either way the narrative is labeled AI HYPOTHESIS.
+### 6. Persistence
+
+PRED uses SQLite through Node's built-in `node:sqlite`, so there is no dependency. The database is at `PRED_DB_PATH` (default `data/pred.sqlite`) and holds these tables:
+- `events`: the latest snapshot of each event
+- `event_log`: the append-only audit trail
+- `memory`: outcomes and evaluations
+- `candles`: 3 days of 1-minute observations, used to resume detection after a restart
+
+Open events are restored on startup and verification continues. This suits a **single-instance** deployment with a **persistent disk**. On Railway, attach a volume (see below). The status panel warns when no volume is attached.
+
+### 7. LIVE MEMORY and the reaction model
+
+LIVE MEMORY starts at **0 verified events**. Accuracy metrics (direction, catalyst, reaction range, Brier score, false-positive rate) appear only once enough real events have resolved; until then the UI says *Insufficient live history*. The Reaction Agent publishes no range without comparable real history and shows **LOW CONFIDENCE** instead. Synthetic data exists only in the separate demo and never mixes with live data.
+
+### 8. Claude analyst (optional)
+
+Set `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, for example `claude-opus-5`. The model is validated against the Models API at startup and its real status appears in the Connections panel. Claude writes explanations only, citing evidence IDs. It never sets prices, confidence numbers, confirmations or trade decisions. Without it, PRED works fully on deterministic logic.
+
+### 9. No autonomous trading
+
+PRED recommends one of **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. It never places orders, and the server has no order-placement code. No private API keys are required or used. `GET /api/signals` publishes confirmed signals with a risk policy for a *separate* execution agent; `examples/execution-agent.mjs` is a dry-run consumer.
+
+---
 
 ## API
 
 | Method | Path | |
 |---|---|---|
-| GET | `/` · `/app` | landing page · dashboard |
-| GET | `/api/state?mode=demo\|live&event=<id>&sid=<session>` | full snapshot (demo is per `sid`) |
-| GET | `/api/track-record` | simulated-backtest stats (used by the landing page) |
-| GET | `/api/stream?mode=&event=` | Server-Sent Events snapshots |
-| GET | `/api/events/:id?mode=` | event detail, including graph, chart and action |
-| GET | `/api/signals?mode=` | verified signals + risk policy |
-| POST | `/api/demo/next`, `/api/demo/reset`, `/api/demo/autoplay?on=1` | demo control |
-| GET | `/api/health` | health + feed status |
+| GET | `/api/health` | liveness, database, Bitget state |
+| GET | `/api/status` | traditional market OPEN/CLOSED, Bitget tokenized market LIVE/CLOSED/UNKNOWN, Ghost-window flag, connections (Bitget, SEC, GDELT, Claude, Database), counts, last market update |
+| GET | `/api/assets` | discovered Bitget universe: symbol, base/quote, status, category, monitored, last price, 24h volume/turnover, available market data |
+| GET | `/api/market/:symbolOrKey` | rolling market state and last 240 candles; add `?depth=1` for the order book |
+| GET | `/api/events` (`?active=1`) | Ghost Events |
+| GET | `/api/events/:id` | full event |
+| GET | `/api/events/:id/timeline` | timeline and persisted audit log |
+| GET | `/api/events/:id/hypotheses` | every revision |
+| GET | `/api/events/:id/evidence` | evidence and source checks |
+| GET | `/api/memory` | LIVE MEMORY statistics |
+| GET | `/api/signals` | verified signals and risk policy (`tradingEnabled: false`) |
+| GET | `/api/stream` | Server-Sent Events: a snapshot on every engine change and every poll |
 
-## Deploy (recommended: Railway)
+The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessions.
 
-PRED is a **long-running server**. It polls Bitget every 20 seconds, keeps event state in memory, and streams updates to the browser over Server-Sent Events. That fits a persistent container host like **Railway**. Serverless platforms such as Vercel stop functions after each request, which would kill the poller and the SSE streams.
+## Environment
 
-**Railway**
-1. Push the repo to GitHub, then in Railway choose **New Project → Deploy from GitHub repo**. `railway.json` tells Railway to build the `Dockerfile` and health-check `/api/health`.
-2. Under **Variables**, set `SEC_USER_AGENT` (your name and email). Optionally set `ANTHROPIC_API_KEY` and `PRED_SYMBOL_MAP`. Railway sets `PORT` itself.
-3. Under **Settings → Networking**, choose **Generate Domain**.
-4. Optional: to keep live memory across redeploys, attach a **Volume** mounted at `/app/data`.
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRED_MODE` | `live` | `demo` runs only the simulated demo |
+| `PRED_DEMO_ENABLED` | `false` | also expose the simulated demo at `/demo` |
+| `BITGET_BASE_URL` | `https://api.bitget.com` | |
+| `PRED_ASSETS` | all discovered | e.g. `NVDA,TSLA,AAPL,AMZN` (underlying, base coin or symbol) |
+| `PRED_MAX_ASSETS` | 30 | cap when `PRED_ASSETS` is unset (ranked by 24h turnover) |
+| `PRED_MONITOR_CATEGORIES` | `SPOT` | add `USDT-FUTURES` to monitor stock perps |
+| `PRED_POLL_INTERVAL_MS` | 15000 | tickers + candle refresh cadence |
+| `PRED_DETECTOR_INTERVAL_MS` | 30000 | detector cadence |
+| `PRED_ASSET_REFRESH_MS` | 900000 | instrument discovery cadence |
+| `PRED_MIN_TURNOVER_USD` | 5000 | below this 24h turnover a market is "thin" and anomalies are not Ghost Events |
+| `PRED_VERIFY_TIMEOUT_MS` | – | optional earlier UNRESOLVED timeout |
+| `SEC_USER_AGENT` | – | **required for SEC**: `"Your Name you@example.com"` |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – | optional analyst |
+| `PRED_DB_PATH` | `data/pred.sqlite` | put it on a persistent volume |
+| `PRED_CALENDAR` | `data/calendar.json` | scheduled events you maintain |
+| `PRED_RELATIONSHIPS_FILE` | – | extend or override the peer map |
+| `PRED_LOG_FORMAT` | text | `json` for JSON-lines logs |
 
-**Docker anywhere**
+Logs are structured, one line per operation: `[ts] [COMPONENT] [event] OP STATUS duration fields`. Secrets and request headers are never logged. No secret ever reaches the browser, and the Content-Security-Policy restricts the page to its own origin.
 
-```bash
-docker build -t pred . && docker run -p 8787:8787 -e SEC_USER_AGENT="you@example.com" pred
-```
+## Deploy on Railway
 
-`render.yaml` is included as an alternative for Render. Any Node 20+ host works: `npm start`.
+1. **New Project → Deploy from GitHub repo**, branch `main`. `railway.json` builds the `Dockerfile` and health-checks `/api/health`.
+2. **Variables**: `SEC_USER_AGENT="Your Name you@example.com"`, `PRED_DB_PATH=/app/data/pred.sqlite`. Optionally set `PRED_ASSETS`, `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`.
+3. **Volume**: attach one mounted at `/app/data`, otherwise events are lost on every redeploy.
+4. **Networking → Generate Domain.**
+5. Verify from inside the running service: `railway ssh`, then `npm run check:live`. Running it on your own machine also works as a connectivity test. It prints ✓ or the exact failure for Bitget, Instruments, Market Data, SEC, GDELT, Database, SSE and Detector. Then open `/api/status` and `/api/assets`.
+
+If Bitget ever answers 403 from a hosting region, the check shows it. Point `BITGET_BASE_URL` at an allowed endpoint or proxy, or deploy the service in a region Bitget serves. PRED never falls back to simulated data.
+
+## Demo (simulated, separate)
+
+`npm run start:demo` or `PRED_DEMO_ENABLED=true` runs a deterministic 15-step NVDAx scenario at `/demo`. It is labeled SIMULATED everywhere and has its own simulated memory: 183 synthetic backtest events run through the real models. It never shares an engine, memory or database with LIVE.
 
 ## Repository layout
 
 ```
 src/
   agents/      detector · investigator · hypothesis · verifier · reaction · memory · analyst
-  core/        engine (lifecycle) · graph · action · signals
-  market/      bitget client · live feed · US market calendar · series store · universe
-  sources/     GDELT news · SEC EDGAR · calendar · scripted (demo) · unavailable
-  demo/        scenario (simulated tape) · runner (15 steps) · seed (simulated backtest) · per-visitor sessions
+  core/        engine (lifecycle, audit) · graph · action · signals
+  market/      bitget (v3 client + normalizer) · live-universe · market-engine · hours · relationships · series
+  sources/     sec · news (GDELT) · calendar · unavailable · scripted (demo only)
+  live/        runtime (wires the live system; imports no demo code)
+  store/       db (node:sqlite)
+  demo/        simulated scenario, runner, sessions, seed
   server.js    HTTP + SSE
-web/           landing page (index.html) + dashboard (app.html), vanilla JS, inline SVG
-test/          node:test suites
-examples/      demo CLI · Bitget check · dry-run execution agent
-docs/          demo video script
+scripts/       check-live.mjs
+web/           dashboard (app.html) · about page (index.html)
+test/          node:test suites (a mocked Bitget is used only in tests)
 ```
 
 ## Honest limitations
 
-- Evidence weights are hand-set. Calibration tracking exists to show where they are wrong; they are not fitted.
-- Headline sentiment is not inferred. An authoritative live item confirms *that* a company catalyst exists, but its direction comes from price action and comparables.
-- Bitget's tokenized-equity listings change over time. Symbol discovery is automatic but needs a reachable API; this repository's CI sandbox could not reach Bitget, so the client is covered by mocked-response tests.
-- One open event per ticker until its outcome is measured, so a single catalyst is not counted twice.
+- The evidence weights are hand-set; live calibration is there to show where they are wrong.
+- Headline sentiment is not inferred. A confirmed live catalyst says *that* something happened, not which direction it points.
+- Only one instance should write to the SQLite file. Horizontal scaling would need PostgreSQL, which is not included.
+- The development sandbox used to build PRED could not reach Bitget, SEC or GDELT (HTTP 403 from its egress proxy). The live integration follows Bitget's documented v3 contract and is exercised end to end against a contract-shaped mock in the tests. `npm run check:live` in the deployed environment is the source of truth.
 
 *Not financial advice.*

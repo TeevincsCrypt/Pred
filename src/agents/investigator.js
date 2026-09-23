@@ -21,6 +21,8 @@ export const INVESTIGATION_STEPS = [
   'Historical similar patterns',
 ];
 
+// Every evidence item carries a class so the UI can separate what was
+// OBSERVED from what was merely SCHEDULED or recalled from HISTORY.
 export function marketEvidence(anomaly, asset) {
   const m = anomaly.measurements;
   const x = anomaly.cross;
@@ -60,7 +62,7 @@ export function marketEvidence(anomaly, asset) {
     out.push({
       key: `mkt:peer:${p.ticker}`,
       kind: 'PEER_MOVE',
-      title: `${p.ticker} ${p.retPct >= 0 ? '+' : ''}${p.retPct.toFixed(2)}%`,
+      title: `${p.ticker} ${p.retPct >= 0 ? '+' : ''}${p.retPct.toFixed(2)}%${p.sibling ? ' (same stock, other issuer)' : ''}`,
       detail: `Same window · baseline return correlation ${p.corr.toFixed(2)}`,
       data: p,
     });
@@ -74,6 +76,16 @@ export function marketEvidence(anomaly, asset) {
       data: { avgPeerRetPct: x.avgPeerRetPct, residualPct: x.residualPct },
     });
   }
+  if (x.marketWide) {
+    const w = x.marketWide;
+    out.push({
+      key: 'mkt:wide',
+      kind: 'MARKET_WIDE_MOVE',
+      title: `Tokenized market avg ${w.avgRetPct >= 0 ? '+' : ''}${w.avgRetPct.toFixed(2)}% (${w.n} assets)`,
+      detail: `${Math.round(w.breadth * 100)}% moved in the same direction by ≥0.1%`,
+      data: w,
+    });
+  }
   for (const c of x.crypto) {
     out.push({
       key: `mkt:crypto:${c.ticker}`,
@@ -83,7 +95,7 @@ export function marketEvidence(anomaly, asset) {
       data: c,
     });
   }
-  return out;
+  return out.map((e) => ({ ...e, class: 'OBSERVED' }));
 }
 
 // Similar past events from memory → category base rates (HISTORICAL).
@@ -101,6 +113,7 @@ export function historicalEvidence(memory, anomaly) {
     detail: `Most common resolved cause: ${top[0].replace('_', ' ').toLowerCase()} (${Math.round(top[1] * 100)}%)`,
     data: { n: resolved.length, shares, sampleProvenance: [...new Set(resolved.map((r) => r.provenance))] },
     provenance: 'HISTORICAL',
+    class: 'HISTORICAL',
   };
 }
 
@@ -131,7 +144,7 @@ export async function scanSources(sources, ctx, { timeoutMs = 12000 } = {}) {
   const checks = [];
   for (const { s, r, ms } of results) {
     checks.push({ source: s.id, name: s.name, category: s.category, provenance: s.provenance, status: r.status, note: r.note, found: r.evidence.length, checkedAt: ctx.now, latencyMs: ms });
-    for (const e of r.evidence) items.push({ ...e, source: s.name, provenance: e.provenance || s.provenance });
+    for (const e of r.evidence) items.push({ ...e, source: s.name, provenance: e.provenance || s.provenance, class: e.class || (s.category === 'calendar' ? 'SCHEDULED' : 'OBSERVED') });
     if (s.category === 'news' && r.status === 'ok' && !r.evidence.some((e) => e.data?.scope === 'company')) {
       items.push({
         key: `${s.id}:empty`,
@@ -141,6 +154,7 @@ export async function scanSources(sources, ctx, { timeoutMs = 12000 } = {}) {
         source: s.name,
         provenance: s.provenance,
         sourceTime: ctx.now,
+        class: 'OBSERVED',
         data: {},
       });
     }

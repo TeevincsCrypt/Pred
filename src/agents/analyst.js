@@ -3,8 +3,11 @@
 // collected. It never changes the probabilities — those come from the
 // transparent scoring model — and its output is labeled AI HYPOTHESIS.
 // Without a key, PRED uses a deterministic template narrative.
-
-const MODEL = process.env.PRED_CLAUDE_MODEL || 'claude-opus-5';
+//
+// Claude never controls prices, confidence numbers, trade decisions or
+// event confirmation. Configure with ANTHROPIC_API_KEY + ANTHROPIC_MODEL
+// (e.g. ANTHROPIC_MODEL=claude-opus-5); the model is validated against the
+// Models API at startup and reported honestly in the status panel.
 
 const SCHEMA = {
   type: 'object',
@@ -44,7 +47,10 @@ export function templateNarrative(event, rev) {
   };
 }
 
-export function createAnalyst({ enabled = !!process.env.ANTHROPIC_API_KEY } = {}) {
+export function createAnalyst({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.ANTHROPIC_MODEL || process.env.PRED_CLAUDE_MODEL } = {}) {
+  const enabled = !!(apiKey && model);
+  const MODEL = model || null;
+  const status = { status: !apiKey ? 'not_configured' : !model ? 'not_configured' : 'unknown', note: !apiKey ? 'Optional — set ANTHROPIC_API_KEY and ANTHROPIC_MODEL' : !model ? 'ANTHROPIC_MODEL not set' : 'not checked yet', lastOkAt: null, lastError: null };
   let client = null;
   async function getClient() {
     if (client) return client;
@@ -54,7 +60,21 @@ export function createAnalyst({ enabled = !!process.env.ANTHROPIC_API_KEY } = {}
   }
   return {
     enabled,
-    model: enabled ? MODEL : null,
+    model: MODEL,
+    status,
+
+    // Confirms the configured model exists for this key (Models API). Never throws.
+    async probe() {
+      if (!enabled) return status;
+      try {
+        const c = await getClient();
+        const m = await c.models.retrieve(MODEL);
+        Object.assign(status, { status: 'connected', note: `${m.display_name || m.id}`, lastOkAt: Date.now(), lastError: null });
+      } catch (err) {
+        Object.assign(status, { status: 'disconnected', note: `model check failed: ${String(err.message).slice(0, 160)}`, lastError: err.message });
+      }
+      return status;
+    },
     async narrate(event, rev) {
       const fallback = templateNarrative(event, rev);
       if (!enabled) return fallback;
@@ -65,22 +85,23 @@ export function createAnalyst({ enabled = !!process.env.ANTHROPIC_API_KEY } = {}
           .map((e) => `[${e.id}] (${e.provenance}) ${e.kind}: ${e.title} — ${e.detail || ''}`)
           .join('\n');
         const hyps = rev.hypotheses.map((h) => `${h.title}: ${h.probability}%`).join('\n');
-        const res = await c.beta.messages.create({
+        const res = await c.messages.create({
           model: MODEL,
           max_tokens: 2000,
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
-          output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+          output_config: { format: { type: 'json_schema', schema: SCHEMA } },
           system:
             'You are the analyst inside PRED, a market event-intelligence system for tokenized equities. Explain the leading catalyst hypothesis using ONLY the evidence listed. Cite evidence ids. Never invent facts, sources, or numbers. Probabilities are model confidence estimates; do not restate them as certainties.',
           messages: [{ role: 'user', content: `Ghost Event ${event.code} on ${event.ticker} (${event.asset.company}).\n\nHypotheses (model estimates):\n${hyps}\n\nEvidence:\n${evidence}` }],
         });
-        if (res.stop_reason !== 'end_turn') return fallback;
+        if (res.stop_reason !== 'end_turn') return { ...fallback, note: `Claude stopped (${res.stop_reason}); template narrative shown` };
         const text = res.content.find((b) => b.type === 'text')?.text;
         const parsed = JSON.parse(text);
-        return { author: `Claude (${res.model})`, provenance: 'AI_HYPOTHESIS', ...parsed };
+        if (typeof parsed.summary !== 'string') throw new Error('unexpected analyst output');
+        Object.assign(status, { status: 'connected', lastOkAt: Date.now(), lastError: null });
+        return { author: `Claude (${res.model})`, provenance: 'AI_HYPOTHESIS', summary: parsed.summary.slice(0, 2000), wouldConfirm: String(parsed.wouldConfirm || '').slice(0, 600), wouldInvalidate: String(parsed.wouldInvalidate || '').slice(0, 600) };
       } catch (err) {
-        return { ...fallback, note: `Claude unavailable: ${err.message}` };
+        Object.assign(status, { status: 'disconnected', lastError: err.message, note: 'last narrative request failed' });
+        return { ...fallback, note: `Claude unavailable: ${String(err.message).slice(0, 160)}` };
       }
     },
   };

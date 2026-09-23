@@ -2,12 +2,18 @@ services:
   - type: web
     name: pred
     runtime: docker
-    plan: free
+    plan: starter
     healthCheckPath: /api/health
+    disk:
+      name: pred-data
+      mountPath: /app/data
+      sizeGB: 1
     envVars:
-      - key: PRED_LIVE
-        value: "1"
+      - key: PRED_MODE
+        value: live
       - key: SEC_USER_AGENT
         sync: false
       - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
         sync: false

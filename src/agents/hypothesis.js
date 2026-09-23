@@ -8,10 +8,14 @@
 
 import { softmax, toWholePercents, clamp } from '../util/stats.js';
 
+// Bump whenever signal weights or the scoring rule change; every revision
+// records the version that produced it.
+export const MODEL_VERSION = 'pred-hyp-1.1.0';
+
 export const CATEGORIES = {
   COMPANY_SPECIFIC: { title: 'Company-specific catalyst', short: 'Company catalyst', prior: 0 },
   SECTOR_REPRICING: { title: 'Sector-wide repricing', short: 'Sector repricing', prior: 0 },
-  MACRO_CRYPTO: { title: 'Macro / crypto risk flow', short: 'Macro / crypto flow', prior: -0.5 },
+  MACRO_CRYPTO: { title: 'Macro / market-wide flow', short: 'Macro / market-wide', prior: -0.5 },
   LIQUIDITY: { title: 'Liquidity anomaly', short: 'Liquidity anomaly', prior: -0.2 },
   SCHEDULED: { title: 'Scheduled event pre-positioning', short: 'Scheduled event', prior: -1.5 },
   UNKNOWN: { title: 'Unknown / unexplained', short: 'Unknown', prior: 0.3 },
@@ -64,17 +68,39 @@ export function signalsFor(ev, ctx) {
       break;
     }
     case 'PEER_MOVE':
-      if (sameSign(d.retPct, move) && Math.abs(d.retPct) >= 0.5 * Math.abs(move)) add('SECTOR_REPRICING', 0.25, `${d.ticker} moved alongside`);
+      if (d.sibling) {
+        // Same underlying stock, different token issuer: the cleanest check
+        // of whether the move is about the company or about one order book.
+        if (sameSign(d.retPct, move) && Math.abs(d.retPct) >= 0.5 * Math.abs(move)) add('COMPANY_SPECIFIC', 0.3, `${d.ticker} (same stock, other issuer) moved too`);
+        else if (Math.abs(d.retPct) < 0.25 * Math.abs(move)) {
+          add('LIQUIDITY', 0.9, `${d.ticker} (same stock, other issuer) did not move`);
+          add('COMPANY_SPECIFIC', -0.4, 'the same stock on another token did not react');
+        }
+      } else if (sameSign(d.retPct, move) && Math.abs(d.retPct) >= 0.5 * Math.abs(move)) add('SECTOR_REPRICING', 0.25, `${d.ticker} moved alongside`);
+      break;
+    case 'MARKET_WIDE_MOVE':
+      if (d.n >= 3 && sameSign(d.avgRetPct, move) && Math.abs(d.avgRetPct) >= 0.5 * Math.abs(move) && d.breadth >= 0.6) {
+        add('MACRO_CRYPTO', 1.2, `${Math.round(d.breadth * 100)}% of ${d.n} tokenized equities moved the same way`);
+        add('COMPANY_SPECIFIC', -0.5, 'the whole tokenized market moved');
+      } else if (d.n >= 3 && Math.abs(d.avgRetPct) < 0.2 * Math.abs(move)) add('MACRO_CRYPTO', -0.3, `tokenized market flat (avg ${d.avgRetPct.toFixed(2)}%)`);
       break;
     case 'CRYPTO_MOVE':
       if (Math.abs(d.retPct) >= 1.5 && sameSign(d.retPct, move)) add('MACRO_CRYPTO', 1.0, `${d.ticker} moved ${d.retPct.toFixed(2)}% in the same window`);
       else add('MACRO_CRYPTO', -0.4, `${d.ticker} flat (${d.retPct.toFixed(2)}%) — no broad risk flow`);
       break;
-    case 'NEWS_ARTICLE':
+    case 'NEWS_ARTICLE': {
+      // Coverage published well before the move is background, not a catalyst.
+      const stale = ctx.detectedAt && d.publishedAt && d.publishedAt < ctx.detectedAt - 6 * 3600_000;
+      if (stale && d.scope !== 'mention') {
+        add('COMPANY_SPECIFIC', d.official ? 0.4 : 0.1, 'background coverage published before the move');
+        break;
+      }
       if (d.scope === 'company') add('COMPANY_SPECIFIC', d.official ? 2.0 : 0.8, d.official ? 'official company communication' : 'company-specific coverage');
       else if (d.scope === 'sector') add('SECTOR_REPRICING', 0.6, 'sector-level coverage');
       else if (d.scope === 'macro') add('MACRO_CRYPTO', 0.6, 'macro coverage');
+      else if (d.scope === 'mention') add('COMPANY_SPECIFIC', 0.15, 'article mentions the company (not in headline)');
       break;
+    }
     case 'NEWS_SCAN_EMPTY':
       add('UNKNOWN', 0.3, 'no public coverage found yet');
       add('COMPANY_SPECIFIC', -0.1, 'no public company news yet');
@@ -156,14 +182,30 @@ function qualityLabel(evidence, sourceChecks, margin, hasAuthority) {
 }
 
 // Score evidence → ranked hypotheses. `ctx`: { ticker, retPct, peers, sector, priceBefore }
+// Diminishing returns: many items of one kind (e.g. 30 headlines about a
+// mega-cap) must not add up to certainty. Per category, the total from one
+// evidence kind is capped.
+const KIND_CAPS = { NEWS_ARTICLE: 2.4, PEER_MOVE: 0.9, CRYPTO_MOVE: 1.2, SOCIAL_SIGNAL: 0.9, FILING: 2.0 };
+
 export function generateHypotheses(evidence, ctx, sourceChecks = []) {
   const scores = Object.fromEntries(CATEGORY_KEYS.map((k) => [k, CATEGORIES[k].prior]));
   const contrib = Object.fromEntries(CATEGORY_KEYS.map((k) => [k, []]));
+  const kindTotals = new Map();
   for (const ev of evidence) {
     for (const s of signalsFor(ev, ctx)) {
       if (!(s.key in scores)) continue;
-      scores[s.key] += s.w;
-      contrib[s.key].push({ evidenceId: ev.id, kind: ev.kind, provenance: ev.provenance, weight: Math.round(s.w * 100) / 100, reason: s.why });
+      let w = s.w;
+      const cap = KIND_CAPS[ev.kind];
+      if (cap != null) {
+        const tk = `${s.key}:${ev.kind}:${Math.sign(w)}`;
+        const used = kindTotals.get(tk) || 0;
+        const room = Math.max(0, cap - Math.abs(used));
+        w = Math.sign(w) * Math.min(Math.abs(w), room);
+        kindTotals.set(tk, used + w);
+        if (w === 0) continue;
+      }
+      scores[s.key] += w;
+      contrib[s.key].push({ evidenceId: ev.id, kind: ev.kind, provenance: ev.provenance, source: ev.source ?? null, weight: Math.round(w * 100) / 100, reason: s.why });
     }
   }
 
@@ -195,9 +237,12 @@ export function generateHypotheses(evidence, ctx, sourceChecks = []) {
     score: Math.round(scores[r.key] * 100) / 100,
     evidenceFor: contrib[r.key].filter((c) => c.weight > 0).sort((a, b) => b.weight - a.weight),
     evidenceAgainst: contrib[r.key].filter((c) => c.weight < 0).sort((a, b) => a.weight - b.weight),
+    sourceCount: new Set(contrib[r.key].map((c) => c.source || c.kind)).size,
+    prior: CATEGORIES[r.key].prior,
     confidence: rank === 0 ? quality : r.p >= 0.15 ? 'LOW' : 'VERY LOW',
     affectedAssets: affectedAssets(r.key, ctx),
     implication: implication(r.key, ctx),
     label: 'Model confidence estimate — not a measured probability',
+    modelVersion: MODEL_VERSION,
   }));
 }

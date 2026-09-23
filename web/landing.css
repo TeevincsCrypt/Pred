@@ -257,3 +257,6 @@ h2 { text-wrap: balance; font-size: clamp(28px, 3.6vw, 40px); line-height: 1.12;
   .fail { grid-template-columns: 120px 1fr 24px; }
   .btn.lg { width: 100%; justify-content: center; }
 }
+
+.tag.live-tag { color: var(--prov-live); background: var(--prov-live-bg); }
+.empty-row { color: var(--text-muted); text-align: center; padding: 22px !important; }

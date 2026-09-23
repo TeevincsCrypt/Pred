@@ -89,6 +89,21 @@ export function resolve(event, now) {
   }
   const current = revs[revs.length - 1];
   const reversal = event.evidence.find((e) => e.kind === 'PRICE_REVERSAL' && e.data.minutes >= 180);
+  // Evidence-driven invalidation: the move fully reverted and, on that
+  // evidence, the model now leads with a liquidity explanation instead of
+  // the information catalyst it originally proposed.
+  if (reversal && revs[0].primary.key !== 'LIQUIDITY' && current.primary.key === 'LIQUIDITY' && current.primary.probability >= 60) {
+    return {
+      outcome: 'INVALIDATED',
+      actualCategory: 'LIQUIDITY',
+      basis: 'price-behaviour',
+      judgedHypothesis: revs[0].primary,
+      originalHypothesis: revs[0].primary,
+      confirmingEvidenceId: reversal.id,
+      resolvedAt: now,
+      timeToResolutionMs: now - event.detectedAt,
+    };
+  }
   if (reversal && current.primary.key === 'LIQUIDITY' && current.primary.probability >= 70) {
     return {
       outcome: 'CONFIRMED',

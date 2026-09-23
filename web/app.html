@@ -27,20 +27,20 @@
         <a href="#reaction-sec"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>Reaction</a>
         <a href="#memory-sec"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Memory</a>
       </nav>
-      <div class="side-label">Mode</div>
-      <div class="mode-switch" role="tablist" aria-label="Mode">
-        <button role="tab" data-mode="demo" class="active">Demo</button>
-        <button role="tab" data-mode="live">Live</button>
-      </div>
-      <div class="side-label">Integrations</div>
+      <div class="side-label">Connections</div>
+      <div id="connList" class="conn-list"><div class="muted" style="padding:0 10px">Checking…</div></div>
+      <div class="side-label">Links</div>
       <div class="side-links">
-        <a href="#" id="signalsLink" target="_blank"><svg viewBox="0 0 24 24"><path d="M4 12h4l3-8 4 16 3-8h2"/></svg>Signals API</a>
-        <a href="/"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Back to site</a>
+        <a href="#" id="signalsLink" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M4 12h4l3-8 4 16 3-8h2"/></svg>Signals API</a>
+        <a href="/api/assets" id="assetsLink" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Assets API</a>
+        <a href="/demo" id="demoLink" hidden><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg>Simulated demo</a>
+        <a href="/" id="liveLink" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>PRED Live</a>
+        <a href="/about"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>About PRED</a>
       </div>
       <div class="side-foot">
         <div class="side-card">
-          <div class="side-card-title">Market data</div>
-          <div id="sideFeed" class="side-card-body">—</div>
+          <div class="side-card-title">Execution</div>
+          <div id="sideFeed" class="side-card-body">PRED never places orders. Signals only.</div>
         </div>
       </div>
     </aside>
@@ -50,8 +50,8 @@
         <div class="page-title">
           <span class="pt-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V9a7 7 0 0 1 14 0v11l-2.3-1.9L14.3 20 12 18.1 9.7 20l-2.4-1.9z"/></svg></span>
           <div>
-            <h1>Ghost Events</h1>
-            <div class="pt-sub">24/7 event intelligence for tokenized equities</div>
+            <h1 id="pageTitle">PRED LIVE</h1>
+            <div class="pt-sub" id="pageSub">24/7 event intelligence for tokenized equities · Bitget market data</div>
           </div>
         </div>
         <div class="status-row" id="statusRow"></div>
@@ -119,7 +119,7 @@
 
       <section class="panel memory" data-panel="memory" id="memory-sec">
         <div class="panel-head">
-          <h2>PRED Memory · self-evaluation</h2>
+          <h2 id="memoryTitle">PRED Memory · self-evaluation</h2>
           <span class="muted" id="memoryNote"></span>
         </div>
         <div id="memory"></div>
@@ -130,7 +130,7 @@
         <span class="prov-legend">
           <span class="tag tag-live">Live</span> real-time data
           <span class="tag tag-historical">Historical</span> PRED Memory
-          <span class="tag tag-simulated">Simulated</span> scenario / backtest
+          <span class="tag tag-simulated">Simulated</span> demo only (never in LIVE)
           <span class="tag tag-ai_hypothesis">AI hypothesis</span> model output
         </span>
       </footer>

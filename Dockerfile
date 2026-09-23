@@ -5,8 +5,9 @@ RUN npm install --omit=dev --no-audit --no-fund || true
 COPY src ./src
 COPY web ./web
 COPY examples ./examples
+COPY scripts ./scripts
 COPY data/calendar.example.json ./data/calendar.example.json
 RUN mkdir -p data
 ENV PORT=8787
 EXPOSE 8787
-CMD ["node", "src/server.js"]
+CMD ["node", "--disable-warning=ExperimentalWarning", "src/server.js"]
