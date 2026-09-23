@@ -104,7 +104,9 @@ Evidence of one kind has diminishing returns, so 30 headlines about a mega-cap c
 The **Verifier** re-checks open events every 5 minutes. It re-runs SEC and GDELT and checks whether the price held or reverted at +60 and +180 minutes.
 - An official company release or an 8-K/6-K → **CONFIRMED**, or **INVALIDATED** if a different catalyst had been leading.
 - A full reversal that turns the model toward a liquidity explanation → **INVALIDATED**.
-- No authoritative evidence by 30 minutes after the next U.S. open (`PRED_OPEN_GRACE_MS`) → **UNRESOLVED**, noting whether the move held or faded into the open. The price reaction is still measured at the U.S. close and scored in PRED Memory.
+- No authoritative evidence by 30 minutes after the next U.S. open (`PRED_OPEN_GRACE_MS`):
+  - if the move **faded** before the open (≤ 20% of it left), it was liquidity, not information. The event is **INVALIDATED**, or **CONFIRMED** as liquidity if PRED already led with that. This is the same price-behaviour rule the Verifier applies overnight.
+  - otherwise it is **UNRESOLVED**, marked *held* or *partly faded*. A move that held with no official explanation is exactly what PRED exists to surface. The price reaction is still measured at the U.S. close and scored in PRED Memory.
 
 PRED never forces a confirmation.
 

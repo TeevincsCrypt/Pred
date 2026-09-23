@@ -179,7 +179,7 @@ function renderFeed(s) {
     s.events
       .map(
         (e) => `<button class="ev-item ${e.id === sel ? 'sel' : ''}" data-id="${esc(e.id)}">
-      <div class="row"><span class="code">${esc(e.code)}</span><span class="st">${esc(human(e.state))}</span></div>
+      <div class="row"><span class="code">${esc(e.code)}</span><span class="st">${esc(human(e.state))}${e.resolutionBasis === 'faded-by-open' ? ' · faded' : e.state === 'UNRESOLVED' && e.moveHeld === true ? ' · held' : e.state === 'UNRESOLVED' && e.moveHeld === false ? ' · partly faded' : ''}</span></div>
       <div class="row"><b class="mono">${esc(e.ticker)}</b><span class="num ${pctClass(e.retPct)}">${pct(e.retPct)}</span><span class="num muted">vol ${volX(e.volumeChangePct)}</span></div>
       <div class="row muted"><span>${e.primary ? `${esc(CAT[e.primary.key]?.short)} ${e.primary.probability}%` : 'investigating…'}</span><span>${et(e.detectedAt)} ET</span></div>
     </button>`,
