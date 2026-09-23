@@ -26,6 +26,7 @@
         <a href="#timeline-sec"><svg viewBox="0 0 24 24"><path d="M12 3v18M12 7h6M12 12H6M12 17h5"/></svg>Timeline</a>
         <a href="#hyp-sec"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Hypotheses</a>
         <a href="#reaction-sec"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>Reaction</a>
+        <a href="#trade-sec"><svg viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>Trade</a>
         <a href="#memory-sec"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Memory</a>
       </nav>
       <div class="side-label">Connections</div>
@@ -41,7 +42,7 @@
       <div class="side-foot">
         <div class="side-card">
           <div class="side-card-title">Execution</div>
-          <div id="sideFeed" class="side-card-body">PRED never places orders. Signals only.</div>
+          <div id="sideFeed" class="side-card-body">PRED's agents never place orders. Execution needs your explicit approval.</div>
         </div>
       </div>
     </aside>
@@ -112,8 +113,12 @@
             <div id="reaction"></div>
           </div>
           <div class="panel" data-panel="action">
-            <div class="panel-head"><h2>Action posture</h2><span class="muted">PRED does not trade</span></div>
+            <div class="panel-head"><h2>Action posture</h2><span class="muted">Signal only · agents never trade</span></div>
             <div id="action"></div>
+          </div>
+          <div class="panel trade-panel" data-panel="trade" id="trade-sec">
+            <div class="panel-head"><h2>Trade</h2><span class="muted">Human-approved execution</span></div>
+            <div id="trade"></div>
           </div>
         </aside>
       </main>

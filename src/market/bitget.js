@@ -46,8 +46,9 @@ export function createBitgetClient({ fetchImpl = fetch, baseUrl = BITGET_BASE_UR
       }
     },
 
-    async instruments(category = 'SPOT') {
-      const d = await get('/api/v3/market/instruments', { category });
+    async instruments(category = 'SPOT', symbol) {
+      if (symbol) assertSymbol(symbol);
+      const d = await get('/api/v3/market/instruments', { category, symbol });
       if (!Array.isArray(d)) throw new BitgetError('Bitget instruments: expected an array');
       return d.map((r) => normalizeInstrument({ ...r, category: r?.category ?? category })).filter(Boolean);
     },
@@ -93,6 +94,11 @@ export function normalizeInstrument(r) {
     symbolType: r.symbolType ?? null,
     type: r.type ?? null,
     pricePrecision: num(r.pricePrecision),
+    quantityPrecision: num(r.quantityPrecision),
+    priceMultiplier: num(r.priceMultiplier),
+    quantityMultiplier: num(r.quantityMultiplier),
+    minOrderQty: num(r.minOrderQty),
+    maxOrderQty: num(r.maxOrderQty),
     minOrderAmount: num(r.minOrderAmount),
     launchTime: num(r.launchTime),
     offTime: num(r.offTime),

@@ -62,6 +62,8 @@ export function openDb(file = process.env.PRED_DB_PATH || 'data/pred.sqlite') {
 
   return {
     file,
+    // Raw handle for modules that own their own tables (src/trading/store.js).
+    sqlite: db,
     saveEvent(e) {
       q.saveEvent.run(e.id, e.mode, e.seq, e.ticker, e.state ?? null, e.detectedAt, Date.now(), JSON.stringify(e));
     },

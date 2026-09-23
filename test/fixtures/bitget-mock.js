@@ -7,7 +7,7 @@ const envelope = (data) => ({ code: '00000', msg: 'success', requestTime: Date.n
 const res = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, headers: new Map(), text: async () => (typeof body === 'string' ? body : JSON.stringify(body)) });
 
 export const SPOT_INSTRUMENTS = [
-  { symbol: 'NVDAXUSDT', category: 'SPOT', baseCoin: 'NVDAX', quoteCoin: 'USDT', status: 'online', isRwa: 'YES' },
+  { symbol: 'NVDAXUSDT', category: 'SPOT', baseCoin: 'NVDAX', quoteCoin: 'USDT', status: 'online', isRwa: 'YES', pricePrecision: '2', quantityPrecision: '4', minOrderQty: '0.0001', maxOrderQty: '1000', minOrderAmount: '1' },
   { symbol: 'NVDAONUSDT', category: 'SPOT', baseCoin: 'NVDAON', quoteCoin: 'USDT', status: 'online', isRwa: 'YES' },
   { symbol: 'AAPLXUSDT', category: 'SPOT', baseCoin: 'AAPLX', quoteCoin: 'USDT', status: 'online', isRwa: 'YES' },
   { symbol: 'XAUTUSDT', category: 'SPOT', baseCoin: 'XAUT', quoteCoin: 'USDT', status: 'online', isRwa: 'YES' },
