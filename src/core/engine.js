@@ -13,7 +13,7 @@ import { SeriesStore } from '../market/series.js';
 import { marketStatus, nextRegularClose, nextRegularOpen } from '../market/hours.js';
 import { createDetector } from '../agents/detector.js';
 import { createInvestigator } from '../agents/investigator.js';
-import { generateHypotheses, CATEGORIES } from '../agents/hypothesis.js';
+import { generateHypotheses, CATEGORIES, MODEL_VERSION } from '../agents/hypothesis.js';
 import { relation, toAuthoritative, priceCheck, resolve } from '../agents/verifier.js';
 import { predictReaction, PREDICTION_THRESHOLD } from '../agents/reaction.js';
 import { evaluateOutcome } from '../agents/memory.js';
@@ -21,6 +21,7 @@ import { templateNarrative } from '../agents/analyst.js';
 import { buildGraph } from './graph.js';
 import { recommendAction } from './action.js';
 import { mean, round } from '../util/stats.js';
+import { logOp } from '../util/log.js';
 
 export const STATES = ['DETECTED', 'INVESTIGATING', 'HYPOTHESIS_CREATED', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'INVALIDATED', 'UNRESOLVED'];
 const TERMINAL = new Set(['CONFIRMED', 'INVALIDATED', 'UNRESOLVED']);
@@ -43,8 +44,15 @@ export function createEngine({
   rescanIntervalMs = 5 * 60_000,
   // Demo mode passes a gate so each lifecycle stage can be stepped through.
   gate = async () => {},
+  // Live mode: persistence adapter { saveEvent(event), appendLog(eventId, kind, entry) }.
+  persist = null,
+  // Live mode: tokenized-market status per asset ({ status: LIVE|CLOSED|UNKNOWN, reason }).
+  tradability = () => ({ status: 'LIVE' }),
+  // Optional: resolve as UNRESOLVED if no authoritative evidence within this window.
+  resolutionTimeoutMs = null,
 }) {
   const store = new SeriesStore();
+  const suppressedAt = new Map();
   const detector = createDetector(detectorOpts);
   const investigator = createInvestigator({ sources, memory, feedProvenance, feedName });
   const events = new Map();
@@ -76,7 +84,25 @@ export function createEngine({
   // ---------- timeline / state ----------
 
   function note(event, type, agent, text, extra = {}) {
-    event.timeline.push({ at: now(), type, agent, text, ...extra });
+    const entry = { at: now(), type, agent, text, source: extra.source ?? agent, ...extra };
+    event.timeline.push(entry);
+    if (persist) {
+      try {
+        persist.appendLog(event.id, type, entry);
+      } catch (err) {
+        logOp({ component: 'database', op: 'APPEND_LOG', status: 'FAILURE', eventId: event.id, error: err });
+      }
+    }
+  }
+
+  // Append-only audit trail (separate from the human-readable timeline).
+  function audit(event, kind, payload) {
+    if (!persist) return;
+    try {
+      persist.appendLog(event.id, kind, { at: now(), ...payload });
+    } catch (err) {
+      logOp({ component: 'database', op: 'APPEND_LOG', status: 'FAILURE', eventId: event.id, error: err });
+    }
   }
 
   function setState(event, state, text) {
@@ -104,6 +130,7 @@ export function createEngine({
       if (primary) Object.assign(ev, relation(ev, primary, ctx));
       event.evidence.push(ev);
       added.push(ev);
+      audit(event, 'EVIDENCE_ITEM', ev);
     }
     // A clean news scan is superseded (not deleted) once company news appears.
     if (event.evidence.some((e) => e.kind === 'NEWS_ARTICLE' && e.data?.scope === 'company')) {
@@ -117,30 +144,38 @@ export function createEngine({
 
   function hypCtx(event) {
     const m = event.anomaly.measurements;
-    return { ticker: event.ticker, retPct: m.retPct, peers: event.asset.peers, sector: event.asset.sector, priceBefore: m.priceBefore };
+    return { ticker: event.ticker, retPct: m.retPct, peers: event.asset.peers, sector: event.asset.sector, priceBefore: m.priceBefore, detectedAt: event.detectedAt };
   }
 
   async function revise(event, trigger, reason) {
     const active = event.evidence.filter((e) => !e.superseded);
     const hypotheses = generateHypotheses(active, hypCtx(event), event.sourceChecks);
     const prev = event.revisions.at(-1);
+    for (const h of hypotheses) {
+      const before = prev?.hypotheses.find((x) => x.key === h.key);
+      h.confidenceChange = before ? h.probability - before.probability : null;
+      h.at = now();
+    }
     const top = hypotheses[0];
     const rev = {
       rev: (prev?.rev || 0) + 1,
       at: now(),
       trigger,
       reason,
+      modelVersion: MODEL_VERSION,
       evidenceCount: active.length,
+      sourceCount: new Set(active.map((e) => e.source || e.kind)).size,
       hypotheses,
       primary: { key: top.key, title: top.title, probability: top.probability, confidence: top.confidence },
     };
     rev.narrative = templateNarrative(event, rev);
     event.revisions.push(rev);
+    audit(event, 'HYPOTHESIS_REVISION', rev);
     let text;
     if (!prev) text = `Hypotheses generated — primary: ${top.title} ${top.probability}%`;
     else if (prev.primary.key !== top.key) text = `Primary changed: ${prev.primary.title} ${prev.primary.probability}% → ${top.title} ${top.probability}%`;
     else text = `${top.title} ${prev.primary.probability}% → ${top.probability}%`;
-    note(event, 'HYPOTHESIS', 'Hypothesis Agent', `Revision ${rev.rev}: ${text}`, { rev: rev.rev });
+    note(event, 'HYPOTHESIS', 'Hypothesis Agent', `Revision ${rev.rev}: ${text} (${rev.evidenceCount} evidence items from ${rev.sourceCount} sources · model ${MODEL_VERSION})`, { rev: rev.rev, source: `PRED model ${MODEL_VERSION}` });
     if (analyst?.enabled) {
       track(
         analyst.narrate(event, rev).then((n) => {
@@ -156,6 +191,13 @@ export function createEngine({
   // ---------- memory record ----------
 
   function syncRecord(event) {
+    if (persist) {
+      try {
+        persist.saveEvent(event);
+      } catch (err) {
+        logOp({ component: 'database', op: 'SAVE_EVENT', status: 'FAILURE', eventId: event.id, error: err });
+      }
+    }
     if (!memory) return;
     const first = event.revisions[0];
     const last = event.revisions.at(-1);
@@ -201,6 +243,7 @@ export function createEngine({
     const p = predictReaction({ event, memory, now: now(), refPrice, basis: confirmed ? 'confirmed' : 'high-confidence' });
     p.seq = event.predictions.length + 1;
     event.predictions.push(p);
+    audit(event, 'REACTION_PREDICTION', p);
     if (p.status === 'OK') {
       note(event, 'PREDICTION', 'Reaction Agent', `Expected reaction ${p.direction.toLowerCase()}: ${fmtPct(p.rangeLowPct)} → ${fmtPct(p.rangeHighPct)}, estimate ${fmtPct(p.estimatePct)} (confidence ${p.confidence}%, ${p.comparableCount} comparables)${lastPred ? ' — supersedes prediction #' + lastPred.seq : ''}`);
     } else {
@@ -222,7 +265,9 @@ export function createEngine({
       mode,
       provenance: feedProvenance,
       ticker: anomaly.ticker,
-      asset: { ticker: asset.ticker, company: asset.company, sector: asset.sector, peers: asset.peers, symbol: feedStatus.symbols?.[anomaly.ticker] || null },
+      asset: { ticker: asset.ticker, company: asset.company, sector: asset.sector, peers: asset.peers, symbol: asset.symbol || feedStatus.symbols?.[anomaly.ticker] || null, underlying: asset.underlying || null, issuer: asset.issuer || null, category: asset.category || null },
+      priority: anomaly.priority || 'ELEVATED',
+      conditions: anomaly.conditions || null,
       detectedAt,
       market: marketStatus(detectedAt),
       horizonAt: nextRegularClose(detectedAt),
@@ -241,7 +286,12 @@ export function createEngine({
     };
     events.set(event.id, event);
     const m = anomaly.measurements;
-    setState(event, 'DETECTED', `Detector: ${event.ticker} ${fmtPct(m.retPct)} (${m.priceZ.toFixed(1)}σ), volume ${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}%, ${event.market.label.toLowerCase()} (${m.severity})`);
+    const src = feedName;
+    note(event, 'DETECTION', 'Detector', `Price anomaly: ${event.ticker} ${fmtPct(m.retPct)} in ${Math.round((m.windowEnd - m.windowStart) / 60000)}m (${m.priceZ.toFixed(1)}σ vs trailing ${m.baselineBars}-bar volatility)`, { source: src });
+    note(event, 'DETECTION', 'Detector', `Volume anomaly: ${m.volumeRatio.toFixed(1)}× baseline median 1m volume (${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}%)`, { source: src });
+    note(event, 'DETECTION', 'Detector', `Volatility ${m.volatilityRatio.toFixed(1)}× baseline · spread ${m.spread ? `${m.spread.currentBps} bps (${m.spread.ratio}× baseline)` : 'unavailable'}`, { source: src });
+    note(event, 'DETECTION', 'Detector', `${event.market.label} (${event.market.session.replaceAll('_', ' ').toLowerCase()}) · tokenized market trading · priority ${event.priority}`, { source: 'PRED market-hours engine' });
+    setState(event, 'DETECTED', `Ghost Event opened: ${event.ticker} ${fmtPct(m.retPct)}, volume ${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}% (${m.severity})`);
     syncRecord(event);
     emit();
 
@@ -252,7 +302,10 @@ export function createEngine({
     const { items, checks } = await investigator.investigate({ anomaly, asset, now: now() });
     event.sourceChecks = checks;
     const added = addEvidence(event, items, 'investigation');
-    for (const c of checks) note(event, 'SOURCE', 'Investigator', `${c.name}: ${c.status === 'ok' ? c.note : c.status.replace('_', ' ') + ' — ' + c.note}`, { provenance: c.provenance, status: c.status });
+    for (const c of checks) note(event, 'SOURCE', 'Investigator', `${c.name}: ${c.status === 'ok' ? c.note : c.status.replace('_', ' ') + ' — ' + c.note}${c.latencyMs != null ? ` (${c.latencyMs}ms)` : ''}`, { provenance: c.provenance, status: c.status, source: c.name, durationMs: c.latencyMs ?? null });
+    const x = anomaly.cross;
+    const related = [...(x.peers || []).map((p) => `${p.ticker} ${fmtPct(p.retPct)}${p.sibling ? ' (same stock)' : ''}`), ...(x.crypto || []).map((c) => `${c.ticker} ${fmtPct(c.retPct)}`)];
+    if (related.length || x.marketWide) note(event, 'CORRELATION', 'Investigator', `Related movement: ${related.join(', ') || 'no peers with data'}${x.marketWide ? ` · tokenized market avg ${fmtPct(x.marketWide.avgRetPct)} over ${x.marketWide.n} assets (breadth ${Math.round(x.marketWide.breadth * 100)}%)` : ''}`, { source: feedName });
     note(event, 'EVIDENCE', 'Investigator', `${added.length} evidence items collected`);
     emit();
     await gate('hypothesize', event);
@@ -287,6 +340,7 @@ export function createEngine({
       if (event.resolution) return;
       res = { ...res, resolvedAt: now(), timeToResolutionMs: now() - event.detectedAt };
       event.resolution = res;
+      audit(event, 'RESOLUTION', res);
       const auth = event.evidence.find((e) => e.id === res.confirmingEvidenceId);
       note(event, 'RESOLUTION', 'Verifier', `${res.outcome === 'CONFIRMED' ? 'CATALYST CONFIRMED' : 'HYPOTHESIS INVALIDATED'} — ${CATEGORIES[res.actualCategory].title} (${auth?.title}). Leading hypothesis at the time: ${res.judgedHypothesis.title} ${res.judgedHypothesis.probability}%. Time to resolution ${fmtDur(res.timeToResolutionMs)}.`, { evidenceId: auth?.id });
       setState(event, res.outcome);
@@ -313,8 +367,10 @@ export function createEngine({
     fresh.push(...px);
     if (rescan && !event.resolution) {
       const asset = universe[event.ticker];
-      const { items, checks } = await investigator.rescan({ asset, now: now() });
+      const { items, checks } = await investigator.rescan({ asset: asset || event.asset, now: now() });
       event.sourceChecks = [...event.sourceChecks.filter((c) => c.category === 'market' || c.category === 'historical'), ...checks];
+      event.lastRescanAt = now();
+      for (const c of checks.filter((c) => c.status !== 'ok')) note(event, 'SOURCE', 'Verifier', `${c.name}: ${c.status.replace('_', ' ')} — ${c.note}`, { source: c.name, status: c.status });
       fresh.push(...items);
     }
     const added = addEvidence(event, fresh, 'verification');
@@ -322,7 +378,7 @@ export function createEngine({
     const all = [...added, ...promoteAuthoritative(event, added)];
     for (const e of all) {
       const tag = e.relation ? ` [${e.relation.toLowerCase()} primary]` : '';
-      note(event, 'EVIDENCE', 'Verifier', `New evidence: ${e.title}${tag}`, { evidenceId: e.id, provenance: e.provenance, relation: e.relation });
+      note(event, 'EVIDENCE', 'Verifier', `New evidence: ${e.title}${tag}`, { evidenceId: e.id, provenance: e.provenance, relation: e.relation, source: e.source || 'Verifier' });
     }
     if (!event.resolution) await revise(event, 'verification', `${all.length} new evidence item(s)`);
     await settle(event, 'verification');
@@ -353,8 +409,10 @@ export function createEngine({
       peerReactionPct: peerMoves.length ? round(mean(peerMoves), 2) : null,
       measuredAt: now(),
     };
+    audit(event, 'OUTCOME', event.outcome);
     syncRecord(event);
     event.evaluation = evaluateOutcome(memory ? memory.get(event.recordId) : { ...event });
+    audit(event, 'EVALUATION', event.evaluation);
     const e = event.evaluation;
     const o = event.outcome;
     const predText = pred ? `predicted ${fmtPct(pred.estimatePct)} (${fmtPct(pred.rangeLowPct)} → ${fmtPct(pred.rangeHighPct)})` : 'no reaction prediction';
@@ -392,21 +450,57 @@ export function createEngine({
       store.addQuote(ticker, q);
     },
 
+    universe,
+    monitored,
+    // Opens a Ghost Event from a Detector anomaly (normally called by afterBatch).
+    openEvent: (anomaly) => track(openEvent(anomaly)),
+
+    // Reload persisted events after a restart; open ones resume verification.
+    restore(list) {
+      for (const e of list) {
+        events.set(e.id, e);
+        evidenceCounter.set(e.id, e.evidence.length);
+      }
+      emit();
+    },
+
     // Called after each batch of market data.
     afterBatch({ rescan = false } = {}) {
       const t = now();
       const market = marketStatus(t);
       for (const ticker of monitored) {
+        const asset = universe[ticker];
+        if (!asset) continue;
         // One open event per ticker until its outcome is measured (avoids double-counting one catalyst).
         const hasOpen = [...events.values()].some((e) => e.ticker === ticker && !e.outcome);
         if (hasOpen) continue;
-        const a = detector.evaluate({ ticker, store, now: t, market, peers: universe[ticker].peers, cryptoRefs });
-        if (a) track(openEvent(a).catch((err) => sys(`Event pipeline error: ${err.message}`, 'error')));
+        const a = detector.evaluate({ ticker, store, now: t, market, peers: asset.peers || [], cryptoRefs, marketWide: monitored.filter((k) => k !== ticker && !(asset.siblings || []).includes(k)), tradability: tradability(ticker), siblings: asset.siblings || [] });
+        if (!a) continue;
+        if (a.suppressed) {
+          if (t - (suppressedAt.get(ticker) ?? 0) > 30 * 60_000) {
+            suppressedAt.set(ticker, t);
+            sys(`${ticker} ${fmtPct(a.measurements.retPct)} / volume ${a.measurements.volumeRatio}× — not a Ghost Event: ${a.reason}`, 'info');
+            logOp({ component: 'detector', op: 'ANOMALY_SUPPRESSED', asset: ticker, reason: a.reason });
+          }
+          continue;
+        }
+        logOp({ component: 'detector', op: 'GHOST_EVENT', asset: ticker, retPct: a.measurements.retPct, volumeRatio: a.measurements.volumeRatio });
+        track(openEvent(a).catch((err) => sys(`Event pipeline error: ${err.message}`, 'error')));
+      }
+      if (resolutionTimeoutMs) {
+        for (const e of events.values()) {
+          if (!e.resolution && e.revisions.length && e.state === 'AWAITING_CONFIRMATION' && t - e.detectedAt >= resolutionTimeoutMs) {
+            e.resolution = { outcome: 'UNRESOLVED', actualCategory: null, basis: 'verification-timeout', judgedHypothesis: e.revisions.at(-1).primary, originalHypothesis: e.revisions[0].primary, resolvedAt: t, timeToResolutionMs: t - e.detectedAt };
+            note(e, 'RESOLUTION', 'Verifier', `No authoritative evidence within ${fmtDur(resolutionTimeoutMs)} — UNRESOLVED`, { source: 'Verifier timeout' });
+            setState(e, 'UNRESOLVED');
+            syncRecord(e);
+          }
+        }
       }
       const doRescan = rescan || t - lastRescan >= rescanIntervalMs;
       if (doRescan) lastRescan = t;
       for (const e of events.values()) {
-        if (e.state === 'AWAITING_CONFIRMATION' || (e.state === 'CONFIRMED' && !e.outcome)) track(verifyEvent(e, { rescan: doRescan }).catch((err) => sys(`Verifier error: ${err.message}`, 'error')));
+        if (e.state === 'AWAITING_CONFIRMATION' || (TERMINAL.has(e.state) && e.resolution?.outcome === 'CONFIRMED' && !e.outcome)) track(verifyEvent(e, { rescan: doRescan }).catch((err) => sys(`Verifier error: ${err.message}`, 'error')));
         if (e.revisions.length) evaluateHorizon(e);
       }
       emit();
@@ -454,6 +548,7 @@ export function createEngine({
           severity: e.anomaly.measurements.severity,
           primary: e.revisions.at(-1)?.primary || null,
           provenance: e.provenance,
+          priority: e.priority || null,
           closed: !!e.outcome,
         })),
         selected: sel ? api.eventDetail(sel) : null,

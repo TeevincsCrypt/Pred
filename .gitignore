@@ -2,3 +2,5 @@ node_modules/
 data/*.json
 !data/calendar.example.json
 .env
+data/*.sqlite
+data/*.sqlite-*

@@ -23,7 +23,8 @@ const sid = (() => {
 })();
 
 const ui = {
-  mode: new URLSearchParams(location.search).get('mode') || store('pred.mode') || 'demo',
+  // LIVE is the default. The simulated demo lives only under /demo.
+  mode: location.pathname.startsWith('/demo') ? 'demo' : 'live',
   selected: null,
   revIndex: null, // null = latest
   openHyps: new Set(),
@@ -38,7 +39,7 @@ function connect() {
   ui.es?.close();
   const q = new URLSearchParams({ mode: ui.mode, sid });
   if (ui.selected) q.set('event', ui.selected);
-  ui.es = new EventSource(`/api/stream?${q}`);
+  ui.es = new EventSource(ui.mode === 'live' ? `/api/stream?${q}` : `/api/demo/stream?${q}`);
   ui.es.onmessage = (m) => render(JSON.parse(m.data));
   ui.es.onerror = () => {
     $('statusRow').dataset.err = '1';
@@ -49,9 +50,12 @@ function setMode(mode) {
   ui.mode = mode;
   ui.selected = null;
   ui.revIndex = null;
-  store('pred.mode', mode);
-  document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-  $('signalsLink').href = `/api/signals?mode=${mode}&sid=${sid}`;
+  $('signalsLink').href = mode === 'live' ? '/api/signals' : `/api/demo/signals?sid=${sid}`;
+  $('pageTitle').textContent = mode === 'live' ? 'PRED LIVE' : 'PRED DEMO · SIMULATED';
+  $('pageSub').textContent = mode === 'live' ? '24/7 event intelligence for tokenized equities · Bitget market data' : 'Deterministic simulated scenario — not market data';
+  $('assetsLink').hidden = mode !== 'live';
+  $('liveLink').hidden = mode === 'live';
+  document.title = mode === 'live' ? 'PRED LIVE — Ghost Events' : 'PRED DEMO — simulated';
   connect();
 }
 
@@ -79,7 +83,30 @@ function render(snap) {
   spotlight(snap);
 }
 
+const CONN_DOT = { CONNECTED: 'ok', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
+const ago = (t, now) => (t ? `${dur(Math.max(0, now - t)).replace(/^0m$/, '<1m')} ago` : 'never');
+
+function renderLiveStatus(s) {
+  const st = s.status;
+  const tm = st.traditionalMarket;
+  const tk = st.tokenizedMarket.status;
+  const nextOpen = tm.nextOpen ? ` · opens in ${dur(tm.nextOpen - s.now)}` : '';
+  $('statusRow').innerHTML = `
+    <span class="pill"><span class="dot ${st.activeGhostEvents ? 'ghost' : 'ok'}"></span>PRED <b>${st.activeGhostEvents ? 'INVESTIGATING' : 'MONITORING'}</b></span>
+    <span class="pill" title="U.S. equity regular session (NYSE calendar, holidays, early closes)"><span class="dot ${tm.status === 'OPEN' ? 'ok' : 'closed'}"></span>Traditional market <b>${tm.status}</b> · ${esc(human(tm.session).toLowerCase())} · <span class="num">${esc(tm.nyTime)}</span>${nextOpen}</span>
+    <span class="pill" title="Bitget tokenized equities: LIVE when instruments are online and trading with fresh candles"><span class="dot ${tk === 'LIVE' ? 'ok' : tk === 'CLOSED' ? 'closed' : 'warn'}"></span>Bitget tokenized market <b>${tk}</b></span>
+    <span class="pill">Assets monitored <b class="num">${st.assetsMonitored}</b> / ${st.assetsDiscovered} discovered</span>
+    <span class="pill">Active Ghost Events <b class="num">${st.activeGhostEvents}</b></span>
+    <span class="pill" title="${st.lastMarketUpdate ? new Date(st.lastMarketUpdate).toISOString() : ''}">Last market update <b>${ago(st.lastMarketUpdate, s.now)}</b></span>
+    ${st.ghostCondition ? '<span class="pill ghost-pill"><span class="dot ghost"></span><b>Ghost window open</b> · tokenized live, Wall Street closed</span>' : ''}`;
+  $('connList').innerHTML = Object.values(st.connections)
+    .map((c) => `<div class="conn" title="${esc(c.detail || '')}"><span class="dot ${CONN_DOT[c.status] ?? ''}"></span><span class="conn-name">${esc(c.name)}</span><span class="conn-st ${esc(String(c.status).replace(/\s+/g, '-'))}">${esc(c.status)}</span>${c.detail ? `<span class="conn-detail">${esc(c.detail)}</span>` : ''}</div>`)
+    .join('');
+  $('demoLink').hidden = !st.demoEnabled;
+}
+
 function renderStatus(s) {
+  if (s.mode === 'live' && s.status) return renderLiveStatus(s);
   const mk = s.market;
   const feed = s.feed || {};
   const feedDot = { connected: 'ok', simulated: 'warn', discovering: 'warn', error: 'err', disabled: 'err', idle: 'warn' }[feed.status] || 'warn';
@@ -89,9 +116,7 @@ function renderStatus(s) {
     <span class="pill"><span class="dot ${mk.usMarketOpen ? 'ok' : 'closed'}"></span><b>${esc(mk.label)}</b> · ${esc(human(mk.session))} · <span class="num">${esc(mk.nyTime)}</span>${nextOpen}</span>
     <span class="pill">Active Ghost Events <b class="num">${s.activeGhostEvents}</b> / ${s.monitored.length} monitored</span>
     <span class="pill" title="${esc(feed.note || feed.error || '')}"><span class="dot ${feedDot}"></span><b>${s.mode === 'live' ? 'Bitget' : 'Simulated tape'}</b> ${provTag(feed.provenance)}${s.mode === 'live' && feed.status !== 'connected' ? ` <span class="muted">${esc(feed.status === 'error' ? 'unreachable' : feed.status)}</span>` : ''}</span>`;
-  $('sideFeed').innerHTML = `<div style="display:flex;align-items:center;gap:6px"><span class="dot ${feedDot}"></span><b>${s.mode === 'live' ? 'Bitget spot API v2' : 'Simulated tape'}</b></div>
-    <div>${esc(s.mode === 'live' ? (feed.status === 'connected' ? `${Object.keys(feed.symbols || {}).length} symbols live` : feed.error || feed.status) : 'Deterministic demo data, labeled SIMULATED')}</div>
-    <div style="margin-top:4px">Analyst: ${s.analyst.enabled ? esc(s.analyst.model) : 'template narratives'}</div>`;
+  $('connList').innerHTML = `<div class="conn"><span class="dot warn"></span><span class="conn-name">Simulated tape</span><span class="conn-st">SIMULATED</span><span class="conn-detail">Deterministic demo data — no live sources are used here</span></div>`;
 }
 
 function renderAssets(s) {
@@ -102,13 +127,16 @@ function renderAssets(s) {
       .map(
         (a) => `<div class="asset ${a.ticker === focusTicker ? 'focus' : ''} ${alert.has(a.ticker) ? 'alert' : ''}">
       <span class="tk">${esc(a.ticker)}</span>
-      <span class="px">${a.price != null ? a.price.toFixed(2) : '—'} <span class="${pctClass(a.chg1hPct)}">${a.chg1hPct != null ? pct(a.chg1hPct) : ''}</span></span>
-      <span class="sym">${esc(a.symbol || (s.mode === 'live' ? 'not listed / no data' : ''))}</span>
+      <span class="px">${a.price != null ? fmtPx(a.price) : '—'} ${s.mode === 'live' ? `<span class="${pctClass(a.change24hPct)}" title="24h">${a.change24hPct != null ? pct(a.change24hPct) : '—'}</span>` : `<span class="${pctClass(a.chg1hPct)}">${a.chg1hPct != null ? pct(a.chg1hPct) : ''}</span>`}</span>
+      <span class="sym">${esc(a.symbol || '')}${a.tokenizedMarket ? ` · <span class="tk-st ${esc(a.tokenizedMarket)}">${esc(a.tokenizedMarket)}</span>` : ''}</span>
       ${sparkline(a.spark)}
     </div>`,
       )
-      .join('') || '<div class="empty">No monitored assets.</div>';
+      .join('') || `<div class="empty">${s.mode !== 'live' ? 'No monitored assets.' : s.status?.connections?.bitget?.status === 'DISCONNECTED' ? `Bitget unreachable — no assets discovered (${esc(s.status.connections.bitget.detail || '')}). Nothing is simulated in LIVE mode.` : s.status?.assetsDiscovered === 0 && s.status?.connections?.bitget?.status === 'CONNECTED' ? 'Bitget lists no tokenized-equity (RWA) instruments right now.' : 'Discovering tokenized equities from Bitget…'}</div>`;
 }
+
+const fmtPx = (x) => (x == null ? '—' : x >= 1000 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toPrecision(4));
+const fmtVol = (x) => (x == null ? '—' : x >= 1e9 ? `${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `${(x / 1e3).toFixed(1)}K` : x.toFixed(0));
 
 function renderDemo(s) {
   const bar = $('demoBar');
@@ -125,7 +153,7 @@ function renderDemo(s) {
 }
 
 function renderFeed(s) {
-  $('feedCount').textContent = `${s.events.length} event${s.events.length === 1 ? '' : 's'} this session`;
+  $('feedCount').textContent = s.mode === 'live' ? `${s.events.length} persisted event${s.events.length === 1 ? '' : 's'}` : `${s.events.length} event${s.events.length === 1 ? '' : 's'} this session`;
   const sel = s.selected?.id;
   $('eventList').innerHTML =
     s.events
@@ -137,7 +165,7 @@ function renderFeed(s) {
     </button>`,
       )
       .join('') ||
-    `<div class="empty">${s.mode === 'live' ? 'No Ghost Events yet. PRED opens one when a monitored tokenized equity moves abnormally while the U.S. market is closed.' : 'Press <b>Start demo</b> to replay a simulated NVDAx Ghost Event.'}</div>`;
+    `<div class="empty">${s.mode === 'live' ? '<b>No active Ghost Events detected.</b><br/>PRED opens one only when a Bitget tokenized equity is trading, the U.S. market is closed, and price/volume behave abnormally. Quiet is a valid state.' : 'Press <b>Start demo</b> to replay a simulated NVDAx Ghost Event.'}</div>`;
   $('eventList').querySelectorAll('.ev-item').forEach((b) =>
     b.addEventListener('click', () => {
       ui.selected = b.dataset.id;
@@ -152,6 +180,21 @@ const LIFE = ['DETECTED', 'INVESTIGATING', 'HYPOTHESIS_CREATED', 'AWAITING_CONFI
 function renderHero(s) {
   const e = s.selected;
   const el = $('hero');
+  if (!e && s.mode === 'live') {
+    const rows = (s.markets || [])
+      .map(
+        (m) => `<tr><td><b>${esc(m.key)}</b><div class="muted">${esc(m.symbol)}</div></td><td class="m">${fmtPx(m.lastPrice)}</td><td class="m ${pctClass(m.change24hPct)}">${m.change24hPct == null ? '—' : pct(m.change24hPct)}</td><td class="m">${fmtVol(m.turnover24h)}</td><td class="m">${m.volumeAnomalyRatio == null ? '<span class="na-t">n/a</span>' : `${m.volumeAnomalyRatio}×`}</td><td class="m">${m.volatility1mPct == null ? '<span class="na-t">n/a</span>' : `${m.volatility1mPct}%`}</td><td class="m">${m.spreadBps == null ? '<span class="na-t">n/a</span>' : `${m.spreadBps} bps`}</td><td><span class="tk-st ${esc(m.tokenizedMarket)}" title="${esc(m.tokenizedReason)}">${esc(m.tokenizedMarket)}</span></td><td class="m muted">${m.lastCandleAt ? et(m.lastCandleAt) : '—'}</td></tr>`,
+      )
+      .join('');
+    el.innerHTML = `<div class="hero-empty live-empty">
+      <div class="eyebrow">Live · Bitget tokenized equities</div>
+      <div class="big">No active Ghost Events detected.</div>
+      <p>PRED is monitoring real Bitget market data. A Ghost Event opens only when a tokenized equity is actively trading, the U.S. market is closed, and price/volume move abnormally against their own baseline. No activity is simulated here.</p>
+      <div class="table-wrap"><table class="recent live-table"><thead><tr><th>Asset</th><th>Last</th><th>24h</th><th>24h turnover</th><th>Vol ratio</th><th>1m vol.</th><th>Spread</th><th>Tokenized</th><th>Last candle (ET)</th></tr></thead><tbody>${rows || `<tr><td colspan="9" class="muted">${s.status?.connections?.bitget?.status === 'DISCONNECTED' ? `Bitget unreachable: ${esc(s.status.connections.bitget.detail || '')}` : 'Waiting for the first Bitget market data…'}</td></tr>`}</tbody></table></div>
+      <p class="muted" style="margin-top:10px">Values Bitget does not provide are shown as n/a, never estimated. Vol ratio = last 5 one-minute bars vs. their 2-hour median.</p>
+    </div>`;
+    return;
+  }
   if (!e) {
     const mem = s.memory;
     el.innerHTML = `<div class="hero-empty">
@@ -184,7 +227,7 @@ function renderHero(s) {
   }
   el.innerHTML = `<div class="hero-grid">
     <div class="ghost-card">
-      <div class="ghost-title"><span class="dot ${active ? 'ghost' : 'ok'}"></span>${esc(e.code)} ${provTag(e.provenance)}</div>
+      <div class="ghost-title"><span class="dot ${active ? 'ghost' : 'ok'}"></span>${esc(e.code)} ${provTag(e.provenance)}${e.priority ? ` <span class="prio">${esc(e.priority)} PRIORITY</span>` : ''}</div>
       <div class="ghost-ticker">${esc(e.ticker)}</div>
       <div class="ghost-move"><span class="${pctClass(m.retPct)}">${pct(m.retPct)}</span><span class="vol">Volume ${m.volumeChangePct >= 0 ? '+' : ''}${m.volumeChangePct}%</span></div>
       <dl class="kv">
@@ -198,7 +241,7 @@ function renderHero(s) {
       <div class="stepper">${['Detect', 'Investigate', 'Hypothesis', 'Await', 'Resolve'].map((l, i) => `<div class="s ${segCls(i)}"><i>${i <= stepIdx ? (segCls(i).includes('bad') ? '✕' : '✓') : ''}</i>${l}</div>`).join('')}</div>
     </div>
     <div class="hero-chart">
-      <div class="chart-head"><h3>${esc(e.ticker)} · 1-minute closes (ET)</h3><span class="muted">${esc(e.asset.symbol || '')}</span></div>
+      <div class="chart-head"><h3>${esc(e.ticker)} · 1-minute closes (ET)</h3><span class="muted">${esc(e.asset.symbol || '')}${e.asset.company ? ` · ${esc(e.asset.company)}` : ''}</span></div>
       <div id="priceChart"></div>
     </div>
   </div>${confirm}`;
@@ -215,8 +258,8 @@ function renderTimeline(e) {
   el.innerHTML = e.timeline
     .map(
       (t, i) => `<div class="tl-item ${esc(t.type)} ${i >= ui.tlSeen && ui.tlSeen ? 'new' : ''}">
-      <span class="tl-time">${etFull(t.at).replace(' ET', '')}</span>
-      <span class="tl-agent">${esc(t.agent)}</span>
+      <span class="tl-time" title="${new Date(t.at).toISOString()}">${etFull(t.at).replace(' ET', '')}${s_sec(t.at)}</span>
+      <span class="tl-agent">${esc(t.agent)}${t.source && t.source !== t.agent ? `<span class="tl-src">${esc(t.source)}${t.durationMs != null ? ` · ${t.durationMs}ms` : ''}</span>` : ''}</span>
       <span class="tl-text">${esc(t.text)}${t.relation && t.relation !== 'NEUTRAL' ? `<span class="rel ${t.relation}">${t.relation}</span>` : ''} ${t.provenance && t.type !== 'STATE' ? provTag(t.provenance) : ''}</span>
     </div>`,
     )
@@ -247,9 +290,14 @@ function renderHypotheses(e) {
   };
   const nar = rev.narrative;
   const evById = Object.fromEntries(e.evidence.map((x) => [x.id, x]));
-  const evRow = (c) => `<li><span class="w ${c.weight > 0 ? 'pos' : 'neg'}">${c.weight > 0 ? '+' : ''}${c.weight.toFixed(2)}</span><span>${esc(c.reason)}<br/><span class="muted">${esc(evById[c.evidenceId]?.title || c.kind)}</span></span><span>${provTag(c.provenance)}</span></li>`;
+  const evRow = (c) => {
+    const ev = evById[c.evidenceId];
+    const title = esc(ev?.title || c.kind);
+    const link = ev?.url && /^https?:\/\//.test(ev.url) ? `<a href="${esc(ev.url)}" target="_blank" rel="noopener noreferrer nofollow">${title}</a>` : title;
+    return `<li><span class="w ${c.weight > 0 ? 'pos' : 'neg'}">${c.weight > 0 ? '+' : ''}${c.weight.toFixed(2)}</span><span>${esc(c.reason)}<br/><span class="muted">${link}${ev?.source ? ` · ${esc(ev.source)}` : ''}${ev?.class && ev.class !== 'OBSERVED' ? ` · ${esc(ev.class)}` : ''}</span></span><span>${provTag(c.provenance)}</span></li>`;
+  };
   el.innerHTML =
-    `<div class="muted" style="margin-bottom:8px">Revision ${rev.rev} · ${esc(rev.trigger)} · ${esc(rev.reason || '')} · ${etFull(rev.at)} · ${rev.evidenceCount} evidence items</div>` +
+    `<div class="muted" style="margin-bottom:8px">Revision ${rev.rev} · ${esc(rev.trigger)} · ${esc(rev.reason || '')} · ${etFull(rev.at)} · ${rev.evidenceCount} evidence items${rev.sourceCount != null ? ` from ${rev.sourceCount} sources` : ''}${rev.modelVersion ? ` · model <span class="mono">${esc(rev.modelVersion)}</span>` : ''}</div>` +
     (nar ? `<div class="narrative"><div class="by">AI HYPOTHESIS · ${esc(nar.author)}</div>${esc(nar.summary)}<div style="margin-top:4px"><b>Would confirm:</b> ${esc(nar.wouldConfirm)}</div><div><b>Would invalidate:</b> ${esc(nar.wouldInvalidate)}</div></div>` : '') +
     rev.hypotheses
       .map((h, i) => {
@@ -257,12 +305,13 @@ function renderHypotheses(e) {
         return `<div class="hyp ${i === 0 ? 'primary' : ''}">
         <div class="hyp-head"><div><div class="hyp-rank">${esc(h.rank)}</div><div class="hyp-title">${esc(h.title)}</div></div><div class="hyp-pct">${h.probability}%</div></div>
         <div class="bar"><i style="width:${h.probability}%;background:${CAT[h.key].color}"></i></div>
-        <div class="hyp-meta"><span>Confidence: ${esc(h.confidence)}</span><span>${h.evidenceFor.length} for · ${h.evidenceAgainst.length} against</span></div>
+        <div class="hyp-meta"><span>Confidence: ${esc(h.confidence)}${h.confidenceChange != null && h.confidenceChange !== 0 ? ` · <b class="${h.confidenceChange > 0 ? 'up' : 'down'}">${h.confidenceChange > 0 ? '▲' : '▼'} ${Math.abs(h.confidenceChange)} pts</b>` : ''}</span><span>${h.evidenceFor.length} for · ${h.evidenceAgainst.length} against${h.sourceCount != null ? ` · ${h.sourceCount} sources` : ''}</span></div>
         ${
           i < 4
             ? `<details data-key="${h.key}" ${open ? 'open' : ''}><summary>Evidence & implication</summary>
           ${h.evidenceFor.length ? `<ul class="ev-list">${h.evidenceFor.map(evRow).join('')}</ul>` : '<div class="muted">No supporting evidence.</div>'}
           ${h.evidenceAgainst.length ? `<ul class="ev-list">${h.evidenceAgainst.map(evRow).join('')}</ul>` : ''}
+          ${h.prior != null ? `<div class="muted" style="margin-top:6px">Why ${h.probability}%: prior ${h.prior >= 0 ? '+' : ''}${h.prior} + evidence weights above = score ${h.score}, softmax (T=1.5) across all six categories, capped short of certainty.</div>` : ''}
           <div class="impl"><b>Expected implication:</b> ${esc(h.implication)}</div>
           <div class="assets">Affected: ${h.affectedAssets.map(esc).join(', ')}</div>
         </details>`
@@ -295,7 +344,7 @@ function renderReaction(e) {
     return;
   }
   if (p.status !== 'OK') {
-    el.innerHTML = `<div class="empty">${esc(p.note)}. PRED will not guess without comparable history.</div>`;
+    el.innerHTML = `<div class="rx-top"><div class="stat"><div class="lbl">Historical comparables</div><div class="val sm">Insufficient live history</div><div class="sub">${esc(p.note)}</div></div><div class="stat"><div class="lbl">Reaction prediction</div><div class="val sm down">LOW CONFIDENCE</div><div class="sub">no range published</div></div><div class="stat"><div class="lbl">Category</div><div class="val sm">${esc(CAT[p.category]?.short || '—')}</div><div class="sub">leading hypothesis</div></div></div><div class="disclaimer">PRED does not guess a reaction range without enough verified live events to compare against. It will start estimating as real outcomes accumulate in LIVE MEMORY.</div>`;
     return;
   }
   const o = e.outcome;
@@ -327,7 +376,7 @@ function renderAction(e, s) {
   const code = e?.action?.code || 'MONITOR';
   el.innerHTML = `<div class="action-row">${['MONITOR', 'WAIT', 'RESEARCH', 'CONSIDER_TRADE'].map((a) => `<span class="act ${a} ${a === code ? 'on' : ''}">${human(a)}</span>`).join('')}</div>
     <div class="action-reason">${esc(e?.action?.reason || 'No active event — keep monitoring.')}</div>
-    <div class="disclaimer">A <b>CONSIDER TRADE</b> posture is published at <a href="/api/signals?mode=${s.mode}&sid=${sid}" target="_blank">/api/signals</a> for a separate execution agent (e.g. on Bitget Agent Hub) that must enforce its own risk controls. PRED never places orders.</div>`;
+    <div class="disclaimer">A <b>CONSIDER TRADE</b> posture is published at <a href="${s.mode === 'live' ? '/api/signals' : `/api/demo/signals?sid=${sid}`}" target="_blank" rel="noopener">${s.mode === 'live' ? '/api/signals' : '/api/demo/signals'}</a> for a separate execution agent (e.g. on Bitget Agent Hub) that must enforce its own risk controls. PRED never places orders.</div>`;
 }
 
 function renderMemory(s) {
@@ -337,13 +386,20 @@ function renderMemory(s) {
     el.innerHTML = '<div class="empty">Memory unavailable.</div>';
     return;
   }
+  $('memoryTitle').textContent = `${s.memoryLabel || (s.mode === 'live' ? 'LIVE MEMORY' : 'SIMULATED MEMORY')} · self-evaluation`;
+  if (s.mode === 'live' && m.total === 0) {
+    $('memoryNote').innerHTML = `${provTag('LIVE')} real events only`;
+    el.innerHTML = `<div class="tiles"><div class="tile"><div class="lbl">PRED Memory</div><div class="val">0</div><div class="sub">verified events</div></div><div class="tile" style="grid-column:span 4"><div class="lbl">Accuracy</div><div class="val sm" style="font-size:16px">Insufficient live history</div><div class="sub">Direction, catalyst and reaction-range accuracy, Brier score and false-positive rate are computed only from real, resolved Ghost Events. None exist yet, so no numbers are shown.</div></div></div>`;
+    return;
+  }
   const before = s.demo?.memoryBefore;
   const delta = (k) => (before && s.demo.step >= 12 && m.total > before.total && k === 'total' ? `<span class="delta">+${m.total - before.total}</span>` : '');
   const p = m.provenance;
   $('memoryNote').innerHTML = `${p.SIMULATED ? `${provTag('SIMULATED')} ${p.SIMULATED}` : ''} ${p.LIVE ? `${provTag('LIVE')} ${p.LIVE}` : ''} ${s.mode === 'demo' ? '· seed events are a simulated backtest run through PRED’s real models' : ''}`;
   const a = m.accuracy;
   const accRow = (label, r, note, invert = false) => {
-    const v = r?.rate;
+    const v = s.mode === 'live' && r?.n != null && r.n < 5 ? null : r?.rate;
+    if (s.mode === 'live' && r?.n != null && r.n < 5) note = `insufficient live history (n=${r.n}, need ≥5)`;
     return `<div class="acc"><span>${label}</span><span class="v">${v == null ? '—' : `${Math.round(v * 100)}%`} <span class="muted">${r?.n != null ? `n=${r.n}` : ''}</span></span><div class="bar"><i style="width:${v == null ? 0 : v * 100}%;background:${invert ? 'var(--serious)' : 'var(--accent)'}"></i></div>${note ? `<span class="muted" style="grid-column:1/-1">${note}</span>` : ''}</div>`;
   };
   const maxFail = Math.max(1, ...Object.values(m.failures));
@@ -396,7 +452,10 @@ function spotlight(s) {
 }
 
 // ---------- controls ----------
-document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+function s_sec(t) {
+  const d = new Date(t);
+  return `:${String(d.getSeconds()).padStart(2, '0')}`;
+}
 const post = (p) => fetch(`${p}${p.includes('?') ? '&' : '?'}sid=${sid}`, { method: 'POST' });
 $('btnNext').addEventListener('click', () => {
   $('btnNext').disabled = true;
@@ -435,4 +494,11 @@ navLinks.forEach((a) => {
   if (t) io.observe(t);
 });
 
+// A deployment running PRED_MODE=demo has no live API; send visitors to /demo.
+fetch('/api/health')
+  .then((r) => r.json())
+  .then((h) => {
+    if (h.mode === 'demo' && ui.mode === 'live') location.replace('/demo');
+  })
+  .catch(() => {});
 setMode(ui.mode);

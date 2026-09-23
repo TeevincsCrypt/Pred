@@ -1,76 +1,130 @@
-// Bitget public market-data client (REST API v2, no key required).
-// Docs: https://www.bitget.com/api-doc/spot/market/Get-Tickers
-//       https://www.bitget.com/api-doc/spot/market/Get-Candle-Data
+// Bitget public market-data client — Unified (v3) market API, no API key.
+//
+//   GET /api/v3/public/time
+//   GET /api/v3/market/instruments?category=SPOT|USDT-FUTURES[&symbol=]
+//   GET /api/v3/market/tickers?category=SPOT|USDT-FUTURES[&symbol=]
+//   GET /api/v3/market/candles?category=&symbol=&interval=1m&limit=
+//   GET /api/v3/market/orderbook?category=&symbol=&limit=
+//
+// Tokenized U.S. equities are discovered, never assumed:
+//   • SPOT instruments with isRwa === "YES" (e.g. xStocks …X, Ondo …ON)
+//   • USDT-FUTURES instruments with symbolType === "stock" (stock perpetuals)
+// Every numeric field is parsed defensively; anything missing becomes null.
 
-const BASE = process.env.BITGET_BASE_URL || 'https://api.bitget.com';
+import { createHttp, HttpError, num } from '../util/http.js';
+
+export const BITGET_BASE_URL = (process.env.BITGET_BASE_URL || 'https://api.bitget.com').replace(/\/+$/, '');
+const SYMBOL_RE = /^[A-Z0-9_]{2,40}$/;
 
 export class BitgetError extends Error {}
 
-async function get(path, params = {}, { timeoutMs = 8000, fetchImpl = fetch } = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const url = `${BASE}${path}${qs ? `?${qs}` : ''}`;
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), headers: { 'User-Agent': 'PRED/0.1' } });
-  if (!res.ok) throw new BitgetError(`Bitget ${path} HTTP ${res.status}`);
-  const body = await res.json();
-  if (body.code !== '00000') throw new BitgetError(`Bitget ${path} error ${body.code}: ${body.msg}`);
-  return body.data;
-}
+export function createBitgetClient({ fetchImpl = fetch, baseUrl = BITGET_BASE_URL, minIntervalMs = 120 } = {}) {
+  // ~8 req/s, well under Bitget's public market-data limits.
+  const http = createHttp({ name: 'bitget', minIntervalMs, timeoutMs: 8000, retries: 2, fetchImpl });
 
-export function createBitgetClient({ fetchImpl = fetch } = {}) {
-  const opts = { fetchImpl };
+  async function get(path, params = {}) {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+    const body = await http.getJson(`${baseUrl}${path}${qs ? `?${qs}` : ''}`, { headers: { 'User-Agent': 'PRED/1.0 (+market-intelligence)', Accept: 'application/json' } });
+    if (!body || typeof body !== 'object') throw new BitgetError(`Bitget ${path}: malformed response`);
+    if (body.code !== '00000') throw new BitgetError(`Bitget ${path}: error ${body.code} ${body.msg ?? ''}`.trim());
+    return body.data;
+  }
+
   return {
-    source: 'Bitget Spot API v2 (public)',
+    source: 'Bitget public market API v3',
+    baseUrl,
+    health: http.health,
 
-    async symbols() {
-      const data = await get('/api/v2/spot/public/symbols', {}, opts);
-      return data.map((s) => ({ symbol: s.symbol, base: s.baseCoin, quote: s.quoteCoin, status: s.status }));
+    async serverTime() {
+      const d = await get('/api/v3/public/time');
+      return num(d?.serverTime);
     },
 
-    async ticker(symbol) {
-      const [t] = await get('/api/v2/spot/market/tickers', { symbol }, opts);
-      if (!t) throw new BitgetError(`No ticker for ${symbol}`);
-      return {
-        symbol: t.symbol,
-        last: +t.lastPr,
-        bid: +t.bidPr,
-        ask: +t.askPr,
-        open24h: +t.open,
-        change24hPct: +t.change24h * 100,
-        quoteVolume24h: +t.quoteVolume,
-        ts: +t.ts,
-      };
+    async instruments(category = 'SPOT') {
+      const d = await get('/api/v3/market/instruments', { category });
+      if (!Array.isArray(d)) throw new BitgetError('Bitget instruments: expected an array');
+      return d.map((r) => normalizeInstrument({ ...r, category: r?.category ?? category })).filter(Boolean);
     },
 
-    // 1-minute candles, oldest first: { ts, open, high, low, close, volume, quoteVolume }
-    async candles(symbol, { granularity = '1min', limit = 200 } = {}) {
-      const rows = await get('/api/v2/spot/market/candles', { symbol, granularity, limit: String(limit) }, opts);
-      return rows
-        .map((r) => ({ ts: +r[0], open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5], quoteVolume: +r[6] }))
-        .sort((a, b) => a.ts - b.ts);
+    async tickers(category = 'SPOT', symbol) {
+      if (symbol) assertSymbol(symbol);
+      const d = await get('/api/v3/market/tickers', { category, symbol });
+      if (!Array.isArray(d)) throw new BitgetError('Bitget tickers: expected an array');
+      return d.map((r) => normalizeTicker({ ...r, category: r?.category ?? category })).filter(Boolean);
+    },
+
+    // 1-minute candles, oldest first.
+    async candles(category, symbol, { interval = '1m', limit = 200 } = {}) {
+      assertSymbol(symbol);
+      const d = await get('/api/v3/market/candles', { category, symbol, interval, limit: String(limit) });
+      if (!Array.isArray(d)) throw new BitgetError('Bitget candles: expected an array');
+      return d.map(normalizeCandle).filter(Boolean).sort((a, b) => a.ts - b.ts);
+    },
+
+    async orderbook(category, symbol, limit = 5) {
+      assertSymbol(symbol);
+      const d = await get('/api/v3/market/orderbook', { category, symbol, limit: String(limit) });
+      const side = (xs) => (Array.isArray(xs) ? xs.map((l) => ({ price: num(l?.[0]), size: num(l?.[1]) })).filter((l) => l.price != null && l.size != null) : []);
+      return { bids: side(d?.b), asks: side(d?.a), ts: num(d?.ts) };
     },
   };
 }
 
-// Map PRED tickers to listed Bitget spot symbols.
-export function resolveSymbols(listed, assets, { overrides = {}, quote = 'USDT' } = {}) {
-  const online = new Map(listed.filter((s) => s.status === 'online' && s.quote === quote).map((s) => [s.base.toUpperCase(), s.symbol]));
-  const out = {};
-  for (const [ticker, a] of Object.entries(assets)) {
-    if (overrides[ticker]) {
-      out[ticker] = overrides[ticker];
-      continue;
-    }
-    const hit = (a.bitgetCandidates || []).find((c) => online.has(c.toUpperCase()));
-    if (hit) out[ticker] = online.get(hit.toUpperCase());
-  }
-  return out;
+function assertSymbol(s) {
+  if (!SYMBOL_RE.test(String(s))) throw new BitgetError(`Invalid symbol: ${s}`);
 }
 
-export function parseSymbolMap(str = '') {
-  return Object.fromEntries(
-    str
-      .split(',')
-      .map((kv) => kv.trim().split('='))
-      .filter((kv) => kv.length === 2 && kv[0] && kv[1]),
-  );
+export function normalizeInstrument(r) {
+  if (!r || typeof r.symbol !== 'string' || !SYMBOL_RE.test(r.symbol)) return null;
+  return {
+    symbol: r.symbol,
+    category: r.category ?? null,
+    baseCoin: r.baseCoin ?? null,
+    quoteCoin: r.quoteCoin ?? null,
+    status: r.status ?? null,
+    isRwa: r.isRwa === 'YES',
+    isReality: r.isReality ?? null,
+    symbolType: r.symbolType ?? null,
+    type: r.type ?? null,
+    pricePrecision: num(r.pricePrecision),
+    minOrderAmount: num(r.minOrderAmount),
+    launchTime: num(r.launchTime),
+    offTime: num(r.offTime),
+    maintainTime: num(r.maintainTime),
+  };
 }
+
+export function normalizeTicker(r) {
+  if (!r || typeof r.symbol !== 'string') return null;
+  const bid = num(r.bid1Price);
+  const ask = num(r.ask1Price);
+  return {
+    symbol: r.symbol,
+    category: r.category ?? null,
+    last: num(r.lastPrice),
+    open24h: num(r.openPrice24h),
+    high24h: num(r.highPrice24h),
+    low24h: num(r.lowPrice24h),
+    change24hPct: num(r.price24hPcnt) == null ? null : num(r.price24hPcnt) * 100,
+    volume24h: num(r.volume24h), // base units
+    turnover24h: num(r.turnover24h), // quote units (USDT)
+    bid: bid && bid > 0 ? bid : null,
+    ask: ask && ask > 0 ? ask : null,
+    bidSize: num(r.bid1Size),
+    askSize: num(r.ask1Size),
+    markPrice: num(r.markPrice),
+    indexPrice: num(r.indexPrice),
+    ts: num(r.ts),
+  };
+}
+
+// v3 candle: [ts, open, high, low, close, volume(base), turnover(quote)]
+export function normalizeCandle(r) {
+  if (!Array.isArray(r) || r.length < 6) return null;
+  const c = { ts: num(r[0]), open: num(r[1]), high: num(r[2]), low: num(r[3]), close: num(r[4]), volume: num(r[5]), quoteVolume: num(r[6]) };
+  if (c.ts == null || c.open == null || c.high == null || c.low == null || c.close == null || c.volume == null) return null;
+  if (c.close <= 0 || c.high < c.low) return null;
+  return c;
+}
+
+export { HttpError };

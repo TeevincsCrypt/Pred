@@ -54,7 +54,7 @@ export function evaluateOutcome(record) {
   return ev;
 }
 
-export function createMemory({ file = null, records = [] } = {}) {
+export function createMemory({ file = null, records = [], onUpsert = null } = {}) {
   let data = records;
   if (file && fs.existsSync(file)) {
     try {
@@ -85,6 +85,7 @@ export function createMemory({ file = null, records = [] } = {}) {
       if (i >= 0) data[i] = record;
       else data.push(record);
       persist();
+      if (onUpsert) onUpsert(record);
       return record;
     },
     get(id) {
