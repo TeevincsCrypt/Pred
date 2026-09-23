@@ -17,10 +17,23 @@ export function parseUnderlying(baseCoin) {
 
 const cleanCompany = (title) =>
   String(title || '')
-    .replace(/\b(INC|CORP|CORPORATION|CO|LTD|PLC|HOLDINGS?|GROUP|\/DE\/|N\.?V\.?|S\.?A\.?|CLASS [A-Z])\b\.?/gi, '')
+    .replace(/\s*\/[a-z]{2,3}\/?/gi, ' ') // EDGAR state suffixes: /DE/, /NY, /new
+    .replace(/\b(INC|CORP|CORPORATION|CO|LTD|PLC|HOLDINGS?|GROUP|N\.?V\.?|S\.?A\.?|AG|CLASS [A-Z])\b\.?/gi, '')
     .replace(/[,.]+/g, ' ')
+    .replace(/[&/\s]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+// Perpetual base coins name the underlying directly; Bitget appends STOCK
+// where the ticker would clash with a crypto coin (RTXSTOCK, NOKSTOCK) and
+// HKD for Hong Kong listings.
+export function parsePerpUnderlying(baseCoin, symbolType) {
+  const b = String(baseCoin || '').toUpperCase();
+  const hk = /HKD$/.test(b);
+  const underlying = b.replace(/STOCK$/, '').replace(/HKD$/, '');
+  const assetClass = symbolType === 'metal' || symbolType === 'commodity' || COMMODITY_BASES.has(b) ? 'commodity' : symbolType === 'crypto' ? 'crypto' : 'equity';
+  return { underlying, issuer: null, assetClass, suffix: '', market: hk ? 'HK' : null };
+}
 
 function titleCase(s) {
   return s
@@ -31,7 +44,7 @@ function titleCase(s) {
 }
 
 export function displayTicker(inst, parsed) {
-  if (inst.category === 'USDT-FUTURES') return `${parsed.underlying || inst.baseCoin}-PERP`;
+  if (inst.category === 'USDT-FUTURES') return `${inst.baseCoin}-PERP`;
   return parsed.suffix ? `${parsed.underlying}${parsed.suffix}` : inst.baseCoin;
 }
 
@@ -44,7 +57,7 @@ export function displayTicker(inst, parsed) {
  * @param opts { assetsFilter: string[]|null, maxAssets, categories: string[], quote }
  */
 export function buildUniverse({ spot = [], futures = [], tickers = new Map(), relationships = {}, secDirectory = null, opts = {} }) {
-  const { assetsFilter = null, maxAssets = 30, categories = ['SPOT'], quote = 'USDT' } = opts;
+  const { assetsFilter = null, maxAssets = 30, categories = ['SPOT', 'USDT-FUTURES'], quote = 'USDT' } = opts;
   const candidates = [
     ...spot.filter((i) => i.isRwa),
     ...futures.filter((i) => i.symbolType === 'stock' || i.isRwa),
@@ -53,7 +66,8 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
   const assets = [];
   const used = new Set();
   for (const inst of candidates) {
-    const parsed = parseUnderlying(inst.baseCoin);
+    const isPerp = (inst.category || (futures.includes(inst) ? 'USDT-FUTURES' : 'SPOT')) === 'USDT-FUTURES';
+    const parsed = isPerp ? parsePerpUnderlying(inst.baseCoin, inst.symbolType) : parseUnderlying(inst.baseCoin);
     let key = displayTicker(inst, parsed);
     if (used.has(key)) key = `${key}:${inst.quoteCoin}`;
     if (used.has(key)) continue;
@@ -61,12 +75,16 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
     const rel = relationships[parsed.underlying] || null;
     const sec = secDirectory?.get(parsed.underlying) || null;
     const company = rel?.company || (sec ? titleCase(cleanCompany(sec.title)) : null);
-    const t = tickers.get(inst.symbol) || null;
+    const t = tickers.get(isPerp ? `${inst.symbol}:PERP` : inst.symbol) || null;
+    // PRED reasons about U.S. market hours, so it monitors U.S.-listed
+    // equities: in SEC EDGAR's registrant list or in the relationship map.
+    // Without the SEC list, fall back to Bitget's own stock classification.
+    const usListed = parsed.market !== 'HK' && (!!rel || !!sec || (!secDirectory && (inst.symbolType === 'stock' || !isPerp)));
     assets.push({
       key,
       ticker: key,
       symbol: inst.symbol,
-      category: inst.category || (futures.includes(inst) ? 'USDT-FUTURES' : 'SPOT'),
+      category: isPerp ? 'USDT-FUTURES' : 'SPOT',
       baseCoin: inst.baseCoin,
       quoteCoin: inst.quoteCoin,
       status: inst.status,
@@ -75,6 +93,7 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
       issuer: parsed.issuer,
       underlying: parsed.underlying,
       assetClass: rel?.isFund ? 'etf' : parsed.assetClass,
+      usListed,
       company: company || parsed.underlying,
       cik: sec ? String(sec.cik).padStart(10, '0') : null,
       sector: rel?.sector || 'Unclassified',
@@ -88,7 +107,7 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
   }
 
   // Monitored set: real, tradable equity/ETF instruments in the configured categories.
-  const eligible = assets.filter((a) => categories.includes(a.category) && ['equity', 'etf'].includes(a.assetClass) && !['offline', 'restrictedAPI'].includes(a.status) && (a.category !== 'SPOT' || a.quoteCoin === quote));
+  const eligible = assets.filter((a) => categories.includes(a.category) && ['equity', 'etf'].includes(a.assetClass) && a.usListed && !['offline', 'restrictedAPI'].includes(a.status) && (a.category !== 'SPOT' || a.quoteCoin === quote));
   let monitored;
   const unmatched = [];
   if (assetsFilter?.length) {

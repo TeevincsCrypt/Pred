@@ -39,13 +39,13 @@ PRED has no runtime dependencies. `@anthropic-ai/sdk` is optional and is used on
 |---|---|
 | Server time / connectivity | `GET /api/v3/public/time` |
 | Instrument discovery + metadata + trading status | `GET /api/v3/market/instruments?category=SPOT` and `?category=USDT-FUTURES` |
-| Ticker: last price, 24h change, 24h volume & turnover, best bid/ask (spread) | `GET /api/v3/market/tickers?category=SPOT` (every spot ticker in one call) |
+| Ticker: last price, 24h change, 24h volume & turnover, best bid/ask (spread) | `GET /api/v3/market/tickers?category=SPOT` / `?category=USDT-FUTURES` (every ticker in one call) |
 | 1-minute candles (K-lines) | `GET /api/v3/market/candles?category=&symbol=&interval=1m&limit=` |
 | Order book (on request) | `GET /api/v3/market/orderbook?category=&symbol=&limit=` |
 
 **Tokenized equities are discovered, never assumed.** Bitget flags them in the instrument response:
 - **Spot tokenized stocks**: `isRwa: "YES"`. These are xStocks (`NVDAXUSDT`, `TSLAXUSDT`, …) and Ondo tokens (`NVDAONUSDT`, `SPYONUSDT`, …).
-- **Stock perpetuals**: `USDT-FUTURES` instruments with `symbolType: "stock"`. They are listed in `/api/assets` and monitored only when `PRED_MONITOR_CATEGORIES` includes `USDT-FUTURES`.
+- **Stock perpetuals**: `USDT-FUTURES` instruments with `symbolType: "stock"`. At the time of writing this is how Bitget exposes most tokenized US equities (e.g. `NFLXUSDT`, `RTXSTOCKUSDT`), so they are monitored by default. Perp base coins are parsed as plain tickers (a `STOCK` suffix is stripped; `…HKD` names are marked Hong Kong and not monitored as US equities).
 
 Only listed instruments appear in the UI and in `/api/assets`. `PRED_ASSETS=NVDA,TSLA,AAPL,AMZN` can narrow the list. It matches by underlying ticker, base coin or symbol, and any requested ticker that Bitget does not list is reported as unmatched instead of being faked. Default response shapes follow the official typings (`bitget-api` SDK v3 types: `InstrumentV3`, `TickerV3`, `CandlestickV3`).
 
@@ -161,7 +161,7 @@ The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessi
 | `BITGET_BASE_URL` | `https://api.bitget.com` | |
 | `PRED_ASSETS` | all discovered | e.g. `NVDA,TSLA,AAPL,AMZN` (underlying, base coin or symbol) |
 | `PRED_MAX_ASSETS` | 30 | cap when `PRED_ASSETS` is unset (ranked by 24h turnover) |
-| `PRED_MONITOR_CATEGORIES` | `SPOT` | add `USDT-FUTURES` to monitor stock perps |
+| `PRED_MONITOR_CATEGORIES` | `SPOT,USDT-FUTURES` | restrict to `SPOT` to ignore stock perps |
 | `PRED_POLL_INTERVAL_MS` | 15000 | tickers + candle refresh cadence |
 | `PRED_DETECTOR_INTERVAL_MS` | 30000 | detector cadence |
 | `PRED_ASSET_REFRESH_MS` | 900000 | instrument discovery cadence |

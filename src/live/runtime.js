@@ -129,6 +129,8 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
         underlying: a.underlying,
         company: a.company,
         assetClass: a.assetClass,
+        symbolType: a.symbolType,
+        usListed: a.usListed,
         monitored: a.monitored,
         lastPrice: s?.lastPrice ?? null,
         change24hPct: s?.change24hPct ?? null,

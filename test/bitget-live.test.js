@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBitgetClient, normalizeCandle, normalizeTicker } from '../src/market/bitget.js';
-import { buildUniverse, parseUnderlying } from '../src/market/live-universe.js';
+import { buildUniverse, parseUnderlying, parsePerpUnderlying } from '../src/market/live-universe.js';
 import { DEFAULT_RELATIONSHIPS } from '../src/market/relationships.js';
 import { createHttp, safeUrl } from '../src/util/http.js';
 import { createBitgetMock } from './fixtures/bitget-mock.js';
@@ -47,13 +47,20 @@ test('universe is discovered from isRwa / stock instruments only', () => {
   const u = buildUniverse({ spot, futures: [{ symbol: 'NVDAUSDT', category: 'USDT-FUTURES', baseCoin: 'NVDA', quoteCoin: 'USDT', status: 'online', symbolType: 'stock' }], relationships: DEFAULT_RELATIONSHIPS });
   assert.deepEqual(u.assets.map((a) => a.symbol).sort(), ['AMDXUSDT', 'NVDAONUSDT', 'NVDAUSDT', 'NVDAXUSDT', 'XAUTUSDT']);
   assert.ok(!u.monitored.includes('XAUT'), 'commodities are listed but not monitored as equities');
-  assert.ok(!u.monitored.includes('NVDA-PERP'), 'stock perps are only monitored when that category is enabled');
+  assert.ok(u.monitored.includes('NVDA-PERP'), 'US-listed stock perps are monitored by default');
+  const spotOnly = buildUniverse({ spot, futures: [{ symbol: 'NVDAUSDT', category: 'USDT-FUTURES', baseCoin: 'NVDA', quoteCoin: 'USDT', status: 'online', symbolType: 'stock' }], relationships: DEFAULT_RELATIONSHIPS, opts: { categories: ['SPOT'] } });
+  assert.ok(!spotOnly.monitored.includes('NVDA-PERP'), 'stock perps are not monitored when that category is disabled');
   const nvdax = u.assets.find((a) => a.key === 'NVDAx');
   assert.deepEqual(nvdax.siblings, ['NVDAon']);
   assert.ok(nvdax.peers.includes('AMDx'));
   const filtered = buildUniverse({ spot, relationships: DEFAULT_RELATIONSHIPS, opts: { assetsFilter: ['NVDA', 'AMZN'] } });
   assert.deepEqual(filtered.monitored.sort(), ['NVDAon', 'NVDAx']);
   assert.deepEqual(filtered.unmatched, ['AMZN'], 'requested assets Bitget does not list are reported, not faked');
+  assert.equal(parsePerpUnderlying('NFLX', 'stock').underlying, 'NFLX', 'perp base coins are not split into issuer suffixes');
+  assert.equal(parsePerpUnderlying('AXON', 'stock').underlying, 'AXON');
+  assert.equal(parsePerpUnderlying('RTXSTOCK', 'stock').underlying, 'RTX');
+  assert.equal(parsePerpUnderlying('TENCENTHKD', 'stock').market, 'HK');
+  assert.equal(parsePerpUnderlying('XAU', 'metal').assetClass, 'commodity');
   assert.deepEqual(parseUnderlying('TSLAON'), { underlying: 'TSLA', issuer: 'Ondo', assetClass: 'equity', suffix: 'on' });
 });
 
