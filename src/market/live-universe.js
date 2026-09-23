@@ -72,14 +72,20 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
     if (used.has(key)) key = `${key}:${inst.quoteCoin}`;
     if (used.has(key)) continue;
     used.add(key);
-    const rel = relationships[parsed.underlying] || null;
-    const sec = secDirectory?.get(parsed.underlying) || null;
+    // Commodity perps (CL = crude oil, BZ = Brent) share tickers with listed
+    // companies, so they are never matched against the SEC registrant list.
+    const isCommodity = parsed.assetClass === 'commodity';
+    const rel = isCommodity ? null : relationships[parsed.underlying] || null;
+    const sec = isCommodity ? null : secDirectory?.get(parsed.underlying) || null;
+    // Bitget tags a few stock perps (HPQ, FCX, RIO…) as "crypto"; an SEC
+    // registrant match identifies them as equities.
+    const assetClass = rel?.isFund ? 'etf' : parsed.assetClass === 'crypto' && isPerp && sec ? 'equity' : parsed.assetClass;
     const company = rel?.company || (sec ? titleCase(cleanCompany(sec.title)) : null);
     const t = tickers.get(isPerp ? `${inst.symbol}:PERP` : inst.symbol) || null;
     // PRED reasons about U.S. market hours, so it monitors U.S.-listed
     // equities: in SEC EDGAR's registrant list or in the relationship map.
     // Without the SEC list, fall back to Bitget's own stock classification.
-    const usListed = parsed.market !== 'HK' && (!!rel || !!sec || (!secDirectory && (inst.symbolType === 'stock' || !isPerp)));
+    const usListed = parsed.market !== 'HK' && !isCommodity && (!!rel || !!sec || (!secDirectory && (inst.symbolType === 'stock' || !isPerp)));
     assets.push({
       key,
       ticker: key,
@@ -92,7 +98,7 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
       symbolType: inst.symbolType,
       issuer: parsed.issuer,
       underlying: parsed.underlying,
-      assetClass: rel?.isFund ? 'etf' : parsed.assetClass,
+      assetClass,
       usListed,
       company: company || parsed.underlying,
       cik: sec ? String(sec.cik).padStart(10, '0') : null,
