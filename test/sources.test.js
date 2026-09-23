@@ -24,3 +24,34 @@ test('failing sources are reported, not hidden; empty news scans are explicit', 
   assert.equal(checks.find((c) => c.source === 'x').status, 'unavailable');
   assert.ok(items.some((i) => i.kind === 'NEWS_SCAN_EMPTY'));
 });
+
+test('GDELT: 15-min cache, circuit breaker on 429, no retry storms', async () => {
+  let t = Date.parse('2026-09-23T12:00:00Z');
+  let calls = 0;
+  let mode = 'ok';
+  const fetchImpl = async () => {
+    calls++;
+    if (mode === '429') return { ok: false, status: 429, headers: new Map(), text: async () => 'Please limit requests to one every 5 seconds' };
+    return { ok: true, status: 200, headers: new Map(), text: async () => '{"articles":[]}' };
+  };
+  const news = createNewsSource({ fetchImpl, now: () => t });
+  const asset = { ticker: 'NVDA-PERP', company: 'NVIDIA', newsTerms: ['NVIDIA'] };
+  assert.equal((await news.collect({ asset, now: t })).status, 'ok');
+  await news.collect({ asset, now: t });
+  assert.equal(calls, 1, 'second identical query served from the 15-min cache');
+
+  mode = '429';
+  t += 16 * 60_000; // cache expired
+  await assert.rejects(news.collect({ asset, now: t }));
+  assert.equal(calls, 2, 'a 429 is not retried');
+  const paused = await news.collect({ asset: { ...asset, newsTerms: ['Tesla'] }, now: t });
+  assert.equal(paused.status, 'unavailable');
+  assert.match(paused.note, /paused after rate limiting/);
+  assert.equal(calls, 2, 'no request while paused');
+  assert.match(news.health.lastError, /paused until/);
+
+  mode = 'ok';
+  t += 61_000; // first backoff is 1 minute
+  assert.equal((await news.collect({ asset: { ...asset, newsTerms: ['Tesla'] }, now: t })).status, 'ok');
+  assert.equal(calls, 3, 'resumes after the backoff');
+});
