@@ -395,21 +395,29 @@ export function createEngine({
     const m = e.anomaly.measurements;
     const pxOpen = store.priceAt(e.ticker, e.nextOpenAt);
     const heldPct = pxOpen && m.priceBefore ? round((pxOpen / m.priceBefore - 1) * 100, 2) : null;
-    const held = heldPct == null ? null : Math.sign(heldPct) === Math.sign(m.retPct) && Math.abs(heldPct) >= Math.abs(m.retPct) / 2;
-    e.resolution = {
-      outcome: 'UNRESOLVED',
-      actualCategory: null,
-      basis: 'open-deadline',
-      moveAtOpenPct: heldPct,
-      moveHeld: held,
-      judgedHypothesis: e.revisions.at(-1).primary,
-      originalHypothesis: e.revisions[0].primary,
-      resolvedAt: t,
-      timeToResolutionMs: t - e.detectedAt,
-    };
+    const retained = heldPct == null || !m.retPct ? null : heldPct / m.retPct; // 1 = fully held, ≤0 = fully reversed
+    const held = retained == null ? null : retained >= 0.5;
+    const faded = retained != null && retained <= 0.2;
+    const first = e.revisions[0].primary;
+    const current = e.revisions.at(-1).primary;
+    const base = { moveAtOpenPct: heldPct, moveRetained: retained == null ? null : round(retained, 2), moveHeld: held, resolvedAt: t, timeToResolutionMs: t - e.detectedAt, confirmingEvidenceId: null };
+    const moveText = heldPct == null ? 'no price at the open' : `move at the open ${fmtPct(heldPct)} vs ${fmtPct(m.retPct)} at detection (${faded ? 'faded' : held ? 'held' : 'partly faded'})`;
+    if (faded) {
+      // The off-hours move was gone by the open with no official news: the
+      // same price-behaviour rule the Verifier applies overnight. A move that
+      // vanishes before Wall Street trades it was liquidity, not information.
+      const ledLiquidity = current.key === 'LIQUIDITY';
+      e.resolution = { ...base, outcome: ledLiquidity ? 'CONFIRMED' : 'INVALIDATED', actualCategory: 'LIQUIDITY', basis: 'faded-by-open', judgedHypothesis: ledLiquidity ? current : first, originalHypothesis: first };
+      audit(e, 'RESOLUTION', e.resolution);
+      note(e, 'RESOLUTION', 'Verifier', ledLiquidity ? `LIQUIDITY CONFIRMED — ${moveText} with no official news. PRED's leading hypothesis (${current.title} ${current.probability}%) held.` : `HYPOTHESIS INVALIDATED — ${moveText} with no official news: a liquidity move, not information. PRED had led with ${first.title} ${first.probability}%.`, { source: 'Verifier · open deadline' });
+      setState(e, e.resolution.outcome);
+      syncRecord(e);
+      if (ledLiquidity) maybePredict(e, 'resolution');
+      return;
+    }
+    e.resolution = { ...base, outcome: 'UNRESOLVED', actualCategory: null, basis: 'open-deadline', judgedHypothesis: current, originalHypothesis: first };
     audit(e, 'RESOLUTION', e.resolution);
-    const moveText = heldPct == null ? 'no price at the open' : `move at the open ${fmtPct(heldPct)} vs ${fmtPct(m.retPct)} at detection (${held ? 'held' : 'faded'})`;
-    note(e, 'RESOLUTION', 'Verifier', `U.S. market opened without an official catalyst (no company release or material SEC filing) — UNRESOLVED. Leading hypothesis was ${e.revisions.at(-1).primary.title} ${e.revisions.at(-1).primary.probability}%; ${moveText}. Reaction will be measured at the U.S. close.`, { source: 'Verifier · open deadline' });
+    note(e, 'RESOLUTION', 'Verifier', `U.S. market opened without an official catalyst (no company release or material SEC filing) — UNRESOLVED. Leading hypothesis was ${current.title} ${current.probability}%; ${moveText}.${held ? ' The market kept a move nobody has explained yet.' : ''} Reaction will be measured at the U.S. close.`, { source: 'Verifier · open deadline' });
     setState(e, 'UNRESOLVED');
     syncRecord(e);
   }
@@ -584,6 +592,8 @@ export function createEngine({
           provenance: e.provenance,
           priority: e.priority || null,
           closed: !!e.outcome,
+          resolutionBasis: e.resolution?.basis ?? null,
+          moveHeld: e.resolution?.moveHeld ?? null,
         })),
         selected: sel ? api.eventDetail(sel) : null,
         log: log.slice(-80).reverse(),

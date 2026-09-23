@@ -142,3 +142,31 @@ test('live runtime never imports demo code', () => {
   assert.ok(!/demo\//.test(code));
   assert.ok(!/seed|scenario/i.test(src.replace(/\/\/.*$/gm, '')));
 });
+
+test('open deadline: a move that faded before the open with no news is INVALIDATED as liquidity', async () => {
+  const restore = noSec();
+  const { fetchImpl } = createBitgetMock({ spikeSymbol: 'NVDAXUSDT', spikePct: 2.5 });
+  const a = createLiveRuntime({ config: cfg(tmpDb()), fetchImpl });
+  restore();
+  await a.market.refreshAssets();
+  await a.market.pollTickers();
+  for (let i = 0; i < 3; i++) await a.market.pollCandles();
+  const store = a.engine.store;
+  const m = measure(store.candles('NVDAx'));
+  const cross = crossAsset(store, m, ['NVDAon'], { BTC: 'BTCUSDT' }, []);
+  a.engine.openEvent({ ticker: 'NVDAx', detectedAt: Date.now(), marketSession: 'WEEKEND', priority: 'ELEVATED', measurements: { ...m, spread: null, score: 10, severity: 'HIGH' }, cross: { peers: cross.withCorr([]), crypto: cross.crypto, marketWide: cross.marketWide, avgPeerRetPct: cross.avgPeerRetPct, residualPct: cross.residualPct } });
+  await a.engine.idle();
+  const ev = [...a.engine.events.values()][0];
+  assert.equal(ev.state, 'AWAITING_CONFIRMATION');
+  // "The open" 31 min ago: the spike is in the last 5 minutes, so the price then is pre-move.
+  ev.nextOpenAt = Date.now() - 31 * 60_000;
+  a.engine.afterBatch();
+  assert.equal(ev.state, 'INVALIDATED');
+  assert.equal(ev.resolution.basis, 'faded-by-open');
+  assert.equal(ev.resolution.actualCategory, 'LIQUIDITY');
+  assert.equal(ev.resolution.moveHeld, false);
+  assert.ok(ev.resolution.moveRetained <= 0.2);
+  assert.ok(ev.timeline.some((t) => /HYPOTHESIS INVALIDATED|LIQUIDITY CONFIRMED/.test(t.text || t.message || JSON.stringify(t))));
+  a.stop();
+  a.db.close();
+});
