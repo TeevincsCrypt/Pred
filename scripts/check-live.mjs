@@ -2,7 +2,13 @@
 //   npm run check:live
 // Exercises the real endpoints: Bitget (time, instruments, tickers, candles,
 // order book), SEC EDGAR, GDELT, the SQLite database, the SSE server and
-// detector startup. Prints ✓ or the exact failure; exits 1 on any failure.
+// detector startup, plus the human-approved execution layer (credentials,
+// account, a dry-run trade plan, the approval gate and safety limits).
+// Prints ✓ or the exact failure; exits 1 on any failure.
+//
+// check:live NEVER places an order: the trading service it builds is given a
+// Bitget client whose placeOrder throws, and every execution attempt it makes
+// is one that must be refused.
 
 import { createBitgetClient } from '../src/market/bitget.js';
 import { buildUniverse } from '../src/market/live-universe.js';
@@ -12,6 +18,10 @@ import { createNewsSource } from '../src/sources/news.js';
 import { openDb } from '../src/store/db.js';
 import { measure } from '../src/agents/detector.js';
 import { config } from '../src/config.js';
+import { createBitgetPrivateClient, credentialsFromEnv } from '../src/trading/bitget-private.js';
+import { createTradeStore } from '../src/trading/store.js';
+import { createTradingService } from '../src/trading/execution.js';
+import { buildPlan } from '../src/trading/rules.js';
 
 process.env.PRED_LOG_LEVEL = process.env.PRED_LOG_LEVEL || 'silent';
 const results = [];
@@ -149,6 +159,87 @@ await step('Detector', async () => {
   if (m === null) return `started · ${sample.symbol}: not enough contiguous 1m bars yet for a baseline (needs 50) — detection starts once history accrues`;
   return `started · ${sample.symbol} now: ${m.retPct}% over 5m (${m.priceZ}σ), volume ${m.volumeRatio}× baseline — ${Math.abs(m.priceZ) >= 3.5 && m.volumeRatio >= 2.5 ? 'ANOMALOUS' : 'normal'}`;
 });
+
+// ---------- human-approved execution (no order is ever placed here) ----------
+const tcfg = config.trading;
+const armedWanted = tcfg.enabled;
+const priv = createBitgetPrivateClient({ baseUrl: config.bitgetBaseUrl });
+// The service below can never submit: placeOrder/cancelOrder throw.
+const neverTrade = {
+  ...priv,
+  configured: priv.configured,
+  health: priv.health,
+  readOnly: priv.readOnly,
+  placeOrder: () => {
+    throw new Error('check:live must never place an order');
+  },
+  cancelOrder: () => {
+    throw new Error('check:live must never cancel an order');
+  },
+};
+let placeAttempted = false;
+const guarded = { ...neverTrade, placeOrder: (...a) => ((placeAttempted = true), neverTrade.placeOrder(...a)) };
+
+await step('Execution cfg', async () => `PRED_TRADING_ENABLED=${tcfg.enabled ? 'true (ARMED)' : 'false (safe default — no live orders)'} · margin ${tcfg.marginMode} · plan ≈${tcfg.planNotional} USDT, TTL ${Math.round(tcfg.planTtlMs / 1000)}s, drift ≤${tcfg.maxDriftBps} bps`);
+
+{
+  const limits = [['PRED_MAX_ORDER_NOTIONAL', tcfg.maxOrderNotional], ['PRED_MAX_POSITION_NOTIONAL', tcfg.maxPositionNotional], ['PRED_MAX_DAILY_TRADING_NOTIONAL', tcfg.maxDailyNotional]];
+  const missing = limits.filter(([, v]) => v == null).map(([k]) => k);
+  const text = limits.map(([k, v]) => `${k.replace('PRED_', '').toLowerCase()}=${v ?? 'unset'}`).join(' · ');
+  if (!missing.length) ok('Safety limits', `${text} (USDT)`);
+  else if (armedWanted) fail('Safety limits', new Error(`${missing.join(', ')} not set — execution stays disabled`));
+  else warn('Safety limits', `${text} — set all three before enabling trading`);
+}
+
+if (credentialsFromEnv()) ok('Credentials', 'BITGET_API_KEY / BITGET_API_SECRET / BITGET_API_PASSPHRASE configured (values not shown)');
+else if (armedWanted) fail('Credentials', new Error('PRED_TRADING_ENABLED=true but Bitget API credentials are missing'));
+else warn('Credentials', 'Bitget API credentials not configured — trade plans are view-only');
+
+if (priv.configured) {
+  await step('Account', async () => {
+    const st = await priv.accountSettings();
+    const mode = String(st?.accountMode || 'unknown');
+    if (!['unified', 'hybrid'].includes(mode.toLowerCase())) throw new Error(`account mode "${mode}" — PRED executes through the Unified Trading API; upgrade the Bitget account to a Unified Trading Account`);
+    const assets = await priv.accountAssets();
+    const hasUsdt = (assets?.assets || []).some((a) => a.coin === 'USDT');
+    return `authenticated · account mode ${mode} · hold mode ${st?.holdMode ?? 'n/a'} · balances readable${hasUsdt ? '' : ' (no USDT balance)'} · amounts not shown`;
+  });
+} else if (armedWanted) fail('Account', new Error('cannot check the account without credentials'));
+else warn('Account', 'skipped — no credentials');
+
+const auth = (process.env.PRED_ADMIN_TOKEN || '').length >= 24;
+if (auth) ok('Approval login', 'PRED_ADMIN_TOKEN configured (value not shown)');
+else if (armedWanted) fail('Approval login', new Error('PRED_ADMIN_TOKEN missing or shorter than 24 characters'));
+else warn('Approval login', 'PRED_ADMIN_TOKEN not set — nobody can approve orders');
+
+let dryPlan = null;
+const memDb = openDb(':memory:');
+const tstore = createTradeStore(memDb.sqlite);
+await step('Trade plan', async () => {
+  if (!sample) throw new Error('no instrument to plan against');
+  const [inst] = (await client.instruments(sample.category, sample.symbol)).filter((i) => i.symbol === sample.symbol);
+  const [tk] = await client.tickers(sample.category, sample.symbol);
+  const retPct = results.detector?.retPct ?? 1;
+  const event = { id: 'live-0', code: 'CHECK (dry run)', ticker: sample.key, asset: { company: sample.company }, anomaly: { measurements: { retPct: Math.abs(retPct) || 1 } }, revisions: [], predictions: [], resolution: null, outcome: null };
+  const r = buildPlan({ event, asset: sample, instrument: inst, ticker: tk, tradingConfig: tcfg, source: 'HUMAN_REQUEST' });
+  if (!r.ok) throw new Error(r.reason);
+  dryPlan = tstore.insert(r.plan);
+  return `dry-run from live ${sample.symbol} metadata: "${dryPlan.confirmationPhrase}" ≈${dryPlan.notional} USDT, stop ${dryPlan.stopLoss}, target ${dryPlan.takeProfit} (in-memory, not persisted, not submitted)`;
+});
+
+await step('Approval gate', async () => {
+  if (!dryPlan) throw new Error('no dry-run plan to test the gate with');
+  const svc = createTradingService({ tradingConfig: tcfg, store: tstore, publicClient: client, privateClient: guarded, authConfigured: () => auth, events: () => null, assets: () => sample });
+  for (const forged of [undefined, {}, { actor: 'human', sessionId: 'forged' }]) {
+    const r = await svc.approveAndExecute(dryPlan.id, forged, { confirmation: dryPlan.confirmationPhrase });
+    if (r.ok || r.code !== 403) throw new Error('an execution without human approval was not refused');
+  }
+  if (placeAttempted) throw new Error('an order submission was attempted');
+  if (tstore.get(dryPlan.id).status !== 'AWAITING_APPROVAL') throw new Error('plan state changed without approval');
+  const st = svc.status();
+  return `executions without an authenticated human approval are refused · no order sent · live execution ${st.executionEnabled ? 'ARMED' : `disabled (${st.blockers.length} blocker${st.blockers.length === 1 ? '' : 's'}: ${st.blockers[0]})`}`;
+});
+memDb.close();
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${failed.length ? `${failed.length} check(s) failed: ${failed.map((f) => f.name).join(', ')}` : 'All checks passed — PRED can run LIVE here.'}`);

@@ -79,11 +79,12 @@ function render(snap) {
   renderHypotheses(ev);
   renderReaction(ev);
   renderAction(ev, snap);
+  renderTrade(ev, snap);
   renderMemory(snap);
   spotlight(snap);
 }
 
-const CONN_DOT = { CONNECTED: 'ok', DEGRADED: 'warn', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
+const CONN_DOT = { CONNECTED: 'ok', ARMED: 'warn', DISABLED: '', DEGRADED: 'warn', DISCONNECTED: 'err', 'NOT CONFIGURED': 'warn', OPTIONAL: '', CHECKING: 'warn' };
 const ago = (t, now) => (t ? `${dur(Math.max(0, now - t)).replace(/^0m$/, '<1m')} ago` : 'never');
 
 function renderLiveStatus(s) {
@@ -378,7 +379,7 @@ function renderAction(e, s) {
   const code = e?.action?.code || 'MONITOR';
   el.innerHTML = `<div class="action-row">${['MONITOR', 'WAIT', 'RESEARCH', 'CONSIDER_TRADE'].map((a) => `<span class="act ${a} ${a === code ? 'on' : ''}">${human(a)}</span>`).join('')}</div>
     <div class="action-reason">${esc(e?.action?.reason || 'No active event — keep monitoring.')}</div>
-    <div class="disclaimer">A <b>CONSIDER TRADE</b> posture is published at <a href="${s.mode === 'live' ? '/api/signals' : `/api/demo/signals?sid=${sid}`}" target="_blank" rel="noopener">${s.mode === 'live' ? '/api/signals' : '/api/demo/signals'}</a> for a separate execution agent (e.g. on Bitget Agent Hub) that must enforce its own risk controls. PRED never places orders.</div>`;
+    <div class="disclaimer">This posture is intelligence, not an order. PRED's agents never place orders; a live order only happens in the <b>Trade</b> panel, after you review a specific plan and press <b>Approve &amp; execute</b>. Signals: <a href="${s.mode === 'live' ? '/api/signals' : `/api/demo/signals?sid=${sid}`}" target="_blank" rel="noopener">${s.mode === 'live' ? '/api/signals' : '/api/demo/signals'}</a>.</div>`;
 }
 
 function renderMemory(s) {
@@ -504,3 +505,163 @@ fetch('/api/health')
   })
   .catch(() => {});
 setMode(ui.mode);
+
+// ---------- Trade: human-approved execution (live only) ----------
+// The browser never sends order parameters. It names a plan id; the server
+// rebuilds the order from the stored plan and fresh Bitget data.
+const trade = { session: null, review: null, msg: null, busy: false };
+
+async function tradeApi(path, { method = 'GET', body } = {}) {
+  const headers = { 'content-type': 'application/json' };
+  if (method === 'POST' && trade.session?.csrfToken) headers['x-pred-csrf'] = trade.session.csrfToken;
+  const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
+  const j = await r.json().catch(() => ({}));
+  return { status: r.status, ...j };
+}
+async function loadSession() {
+  if (ui.mode !== 'live') return;
+  trade.session = await tradeApi('/api/auth/session').catch(() => null);
+}
+
+const TRADE_ST = { AWAITING_APPROVAL: 'warn', APPROVED: 'warn', SUBMITTING: 'warn', SUBMITTED: 'info', PARTIALLY_FILLED: 'info', FILLED: 'ok', CANCELLED: '', REJECTED: 'err', EXPIRED: '', FAILED: 'err', DRAFT: '' };
+const stBadge = (st) => `<span class="tp-st ${TRADE_ST[st] ?? ''}">${esc(human(st))}</span>`;
+const money = (x) => (x == null || x === '' ? '—' : `$${Number(x).toLocaleString('en-US', { maximumFractionDigits: 6 })}`);
+
+function renderTrade(e, s) {
+  const el = $('trade');
+  if (!el) return;
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return; // don't wipe typing
+  if (s.mode !== 'live') {
+    el.innerHTML = `<div class="tp-note">Simulated demo — no trade execution here. Live orders exist only on <a href="/app">PRED Live</a>, and only after a human approves a specific plan.</div>`;
+    return;
+  }
+  const t = s.status?.trading || {};
+  const armed = !!t.executionEnabled;
+  const exec = `<div class="tp-exec-state ${armed ? 'armed' : ''}"><b>Live execution: ${armed ? 'ARMED' : 'DISABLED'}</b>${armed ? ' — every order still needs your approval' : ` — ${esc(t.blockers?.[0] || 'not configured')}`}</div>`;
+  if (!e) {
+    el.innerHTML = `${exec}<div class="tp-note">Select a Ghost Event. Trade plans are drafted from PRED's intelligence; nothing executes without you.</div>`;
+    return;
+  }
+  const plans = s.tradePlans || [];
+  const plan = plans[0] || null;
+  const pred = e.predictions?.filter((p) => p.status === 'OK').at(-1);
+  const rev = e.revisions?.at(-1);
+  const prediction = `<div class="tp-block tp-prediction">
+      <div class="tp-kicker">Prediction · intelligence, not an order</div>
+      <div class="tp-line"><b>${esc(e.ticker)}</b> <span class="${pctClass(e.anomaly.measurements.retPct)}">${pct(e.anomaly.measurements.retPct)}</span> · Traditional market ${esc(e.market?.label || '')}</div>
+      <div class="tp-line">Catalyst: <b>${e.resolution?.outcome === 'CONFIRMED' ? 'CONFIRMED' : 'UNCONFIRMED'}</b>${rev ? ` · leading: ${esc(rev.primary.title)} ${rev.primary.probability}%` : ''}</div>
+      <div class="tp-line">Reaction: ${pred ? `<b>${pred.direction === 'POSITIVE' ? 'Bullish' : pred.direction === 'NEGATIVE' ? 'Bearish' : 'Neutral'} — ${pred.confidence}%</b> (${pct(pred.estimatePct)} to the U.S. close)` : '<b>Insufficient live history</b> · LOW CONFIDENCE'}</div>
+    </div>`;
+  let body = '';
+  const login = !trade.session?.authenticated
+    ? trade.session?.loginAvailable === false
+      ? `<div class="tp-note">Operator login is not configured on this server (PRED_ADMIN_TOKEN). Plans are view-only.</div>`
+      : `<form class="tp-login" id="tpLogin"><input type="password" id="tpToken" placeholder="Operator token" autocomplete="current-password" aria-label="Operator token"/><button class="btn" type="submit">Log in to review</button></form>`
+    : `<div class="tp-note">Operator session active. <a href="#" id="tpLogout">Log out</a></div>`;
+  if (!plan || ['EXPIRED', 'CANCELLED', 'REJECTED', 'FAILED'].includes(plan.status)) {
+    body += plan ? `<div class="tp-card muted-card">Last plan ${stBadge(plan.status)} ${esc(plan.failureReason || plan.expiredReason || plan.cancelledReason || '')}</div>` : '';
+    body += trade.session?.authenticated ? `<button class="btn" id="tpGenerate" ${trade.busy ? 'disabled' : ''}>Generate trade plan</button>` : '';
+  } else {
+    const dir = plan.direction === 'LONG' ? 'LONG' : 'SHORT';
+    body += `<div class="tp-card">
+        <div class="tp-head"><span class="tp-dir ${dir}">${dir} ${esc(plan.ticker)}</span>${stBadge(plan.status)}</div>
+        <dl class="kv tp-kv">
+          <dt>Quantity</dt><dd>${esc(plan.quantity)} <span class="muted">${esc(plan.symbol)}</span></dd>
+          <dt>Estimated price</dt><dd>${money(plan.estimatedPrice)} <span class="muted">≈ ${money(plan.notional)} USDT</span></dd>
+          <dt>Stop</dt><dd>${money(plan.stopLoss)}</dd><dt>Target</dt><dd>${money(plan.takeProfit)}${plan.tpslAttached ? '' : ' <span class="muted">(reference only on spot)</span>'}</dd>
+          <dt>Confidence</dt><dd>${plan.confidence != null ? `${plan.confidence}%` : '<b>LOW</b> — reaction model has no live history'}</dd>
+          ${plan.exchangeOrderId ? `<dt>Bitget order</dt><dd class="mono">${esc(plan.exchangeOrderId)}</dd><dt>Filled</dt><dd>${esc(plan.filledQty ?? '0')} / ${esc(plan.quantity)}${plan.avgPrice && Number(plan.avgPrice) > 0 ? ` @ ${money(plan.avgPrice)}` : ''}</dd>` : ''}
+          ${plan.expiresInSec != null ? `<dt>Expires</dt><dd>${plan.expiresInSec}s</dd>` : ''}
+        </dl>
+        ${plan.status === 'AWAITING_APPROVAL' && trade.session?.authenticated && !(trade.review && trade.review.plan.id === plan.id) ? `<button class="btn primary" id="tpReview" ${trade.busy ? 'disabled' : ''}>Review trade</button> <button class="btn" id="tpDiscard">Discard</button>` : ''}
+        ${['SUBMITTED', 'PARTIALLY_FILLED'].includes(plan.status) && !plan.final && trade.session?.authenticated ? `<button class="btn" id="tpCancelOrder">Cancel order</button>` : ''}
+        ${plan.status === 'SUBMITTED' ? '<div class="tp-note">Order <b>accepted</b> by Bitget — not yet filled.</div>' : ''}
+        <div class="tp-note"><a href="/api/trade/plans/${encodeURIComponent(plan.id)}" target="_blank" rel="noopener">Audit trail</a></div>
+      </div>`;
+  }
+  const rv = trade.review && plan && trade.review.plan.id === plan.id && plan.status === 'AWAITING_APPROVAL' ? trade.review : null;
+  const confirm = rv
+    ? (() => {
+        const p = rv.plan;
+        const ageSec = rv.market?.fetchedAt ? Math.round((Date.now() - rv.market.fetchedAt) / 1000) : null;
+        const verb = p.side === 'buy' ? 'BUY' : 'SELL';
+        return `<div class="tp-block tp-confirm" role="dialog" aria-label="Confirm live order">
+          <div class="tp-live">⚠️ LIVE ORDER — real money on Bitget</div>
+          <div class="tp-phrase">${esc(p.confirmationPhrase)}</div>
+          <dl class="kv tp-kv">
+            <dt>Asset</dt><dd>${esc(p.ticker)} · ${esc(p.symbol)} (${esc(p.category)})</dd>
+            <dt>Direction</dt><dd>${verb} (${esc(p.direction)})</dd>
+            <dt>Order type</dt><dd>Limit, good-till-cancelled, ≤ ${esc(s.status?.trading?.plan?.slippageBps ?? 10)} bps through the touch</dd>
+            <dt>Quantity</dt><dd>${esc(p.quantity)}</dd>
+            <dt>Estimated price</dt><dd>${money(p.estimatedPrice)}</dd>
+            <dt>Notional</dt><dd>≈ ${money(p.notional)} USDT</dd>
+            <dt>Stop loss</dt><dd>${money(p.stopLoss)}</dd><dt>Take profit</dt><dd>${money(p.takeProfit)}</dd>
+            <dt>PRED confidence</dt><dd>${p.confidence != null ? `${p.confidence}%` : 'LOW (no live history)'}</dd>
+            <dt>Current market</dt><dd>${rv.market?.bid ? `${money(rv.market.bid)} / ${money(rv.market.ask)}` : esc(rv.market?.error || '—')}${rv.market?.driftBps != null ? ` · ${rv.market.driftBps} bps from plan` : ''}</dd>
+            <dt>Plan created</dt><dd>${etFull(p.createdAt)}</dd>
+          </dl>
+          <div class="tp-note">Market data refreshed ${ageSec ?? '—'} seconds ago. ${p.expiresInSec != null && p.expiresInSec < 60 ? `<b>Plan expires in ${p.expiresInSec}s.</b>` : ''} The server re-checks price, instrument, balance and limits before submitting.</div>
+          <div class="tp-why"><b>Why PRED generated this trade</b><p>${esc(p.thesis)}</p>${(p.evidenceSummary || []).length ? `<ul>${p.evidenceSummary.map((x) => `<li>${esc(x.reason)} <span class="muted">[${esc(x.id)}]</span></li>`).join('')}</ul>` : ''}</div>
+          <div class="tp-actions"><button class="btn" id="tpCancelReview">Cancel</button><button class="btn danger" id="tpExecute" ${armed && !trade.busy ? '' : 'disabled'} title="${armed ? 'Submit this exact order to Bitget' : esc(t.blockers?.join('; ') || 'execution disabled')}">Approve &amp; execute</button></div>
+          ${armed ? '' : `<div class="tp-note">Execution is disabled on this server: ${esc((t.blockers || []).join('; '))}</div>`}
+        </div>`;
+      })()
+    : '';
+  const msg = trade.msg ? `<div class="tp-msg ${trade.msg.ok ? 'ok' : 'err'}">${esc(trade.msg.text)}</div>` : '';
+  el.innerHTML = `${prediction}<div class="tp-block tp-execution"><div class="tp-kicker">Execution · real orders</div>${exec}${login}${body}${confirm}${msg}</div>`;
+  bindTrade(e, plan);
+}
+
+function bindTrade(e, plan) {
+  const on = (id, fn) => $(id)?.addEventListener(id === 'tpLogin' ? 'submit' : 'click', async (ev) => {
+    ev.preventDefault();
+    if (trade.busy) return;
+    trade.busy = true;
+    try {
+      await fn();
+    } catch (err) {
+      trade.msg = { ok: false, text: String(err.message || err) };
+    } finally {
+      trade.busy = false;
+      ui.snap && render(ui.snap);
+    }
+  });
+  const done = (r, okText) => {
+    trade.msg = r.status === 200 ? { ok: true, text: okText(r) } : { ok: false, text: r.error || `HTTP ${r.status}` };
+  };
+  on('tpLogin', async () => {
+    const r = await tradeApi('/api/auth/login', { method: 'POST', body: { token: $('tpToken').value } });
+    $('tpToken').value = '';
+    if (r.status === 200) {
+      trade.session = { authenticated: true, csrfToken: r.csrfToken };
+      connect(); // the operator's stream includes trade plans
+    }
+    done(r, () => 'Logged in. Plans can now be reviewed.');
+  });
+  on('tpLogout', async () => {
+    await tradeApi('/api/auth/logout', { method: 'POST' });
+    trade.session = { authenticated: false, loginAvailable: true };
+    trade.review = null;
+    connect();
+    trade.msg = null;
+  });
+  on('tpGenerate', async () => done(await tradeApi(`/api/trade/events/${encodeURIComponent(e.id)}/plan`, { method: 'POST' }), (r) => `Plan drafted: ${r.plan.confirmationPhrase}. Review it before anything is sent.`));
+  on('tpReview', async () => {
+    const r = await tradeApi(`/api/trade/plans/${encodeURIComponent(plan.id)}/review`, { method: 'POST' });
+    if (r.status === 200) trade.review = { plan: r.plan, market: r.market };
+    else done(r, () => '');
+  });
+  on('tpDiscard', async () => done(await tradeApi(`/api/trade/plans/${encodeURIComponent(plan.id)}/reject`, { method: 'POST' }), () => 'Plan discarded.'));
+  on('tpCancelReview', async () => {
+    trade.review = null;
+    trade.msg = { ok: true, text: 'Nothing was sent.' };
+  });
+  on('tpExecute', async () => {
+    const p = trade.review.plan;
+    const r = await tradeApi(`/api/trade/plans/${encodeURIComponent(p.id)}/execute`, { method: 'POST', body: { confirmation: p.confirmationPhrase } });
+    trade.review = null;
+    done(r, (x) => (x.plan?.status === 'SUBMITTED' || x.plan?.status === 'PARTIALLY_FILLED' || x.plan?.status === 'FILLED' ? `Bitget accepted order ${x.plan.exchangeOrderId} (${human(x.plan.status)}).` : x.pending ? 'Submission outcome unknown — reconciling with Bitget. It will not be resent.' : `Plan is ${human(x.plan?.status)}.`));
+  });
+  on('tpCancelOrder', async () => done(await tradeApi(`/api/trade/plans/${encodeURIComponent(plan.id)}/cancel-order`, { method: 'POST' }), () => 'Cancel sent to Bitget.'));
+}
+loadSession().then(() => ui.snap && render(ui.snap));

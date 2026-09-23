@@ -1,5 +1,6 @@
 // Runtime configuration (environment variables). LIVE is the default mode.
 const int = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v != null ? Number(v) : d);
+const posNum = (v) => (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
 const list = (v) => (v ? String(v).split(',').map((s) => s.trim()).filter(Boolean) : null);
 
 const mode = (process.env.PRED_MODE || 'live').toLowerCase() === 'demo' ? 'demo' : 'live';
@@ -32,6 +33,26 @@ export const config = {
   resolutionTimeoutMs: int(process.env.PRED_VERIFY_TIMEOUT_MS, null),
   // Verification closes this long after the next U.S. open ("off" = wait for the close).
   openDeadlineMs: String(process.env.PRED_OPEN_GRACE_MS).toLowerCase() === 'off' ? null : int(process.env.PRED_OPEN_GRACE_MS, 30 * 60_000),
+
+  // ---------- Human-approved trade execution (src/trading/) ----------
+  // Live orders are possible only when ALL of these hold: PRED_MODE=live,
+  // PRED_TRADING_ENABLED=true (exactly), Bitget API credentials, an admin
+  // token for the approval login, and every safety limit set. Credentials
+  // and the admin token are read inside their modules and never stored here.
+  trading: {
+    enabled: mode === 'live' && process.env.PRED_TRADING_ENABLED === 'true',
+    maxOrderNotional: posNum(process.env.PRED_MAX_ORDER_NOTIONAL),
+    maxPositionNotional: posNum(process.env.PRED_MAX_POSITION_NOTIONAL),
+    maxDailyNotional: posNum(process.env.PRED_MAX_DAILY_TRADING_NOTIONAL),
+    planNotional: posNum(process.env.PRED_TRADE_NOTIONAL) ?? 25,
+    planTtlMs: int(process.env.PRED_TRADE_PLAN_TTL_MS, 5 * 60_000),
+    maxDriftBps: int(process.env.PRED_TRADE_MAX_DRIFT_BPS, 50),
+    slippageBps: int(process.env.PRED_TRADE_SLIPPAGE_BPS, 10),
+    quoteMaxAgeMs: int(process.env.PRED_TRADE_QUOTE_MAX_AGE_MS, 15_000),
+    autoPlanMinConfidence: int(process.env.PRED_TRADE_MIN_CONFIDENCE, 60),
+    marginMode: process.env.PRED_TRADE_MARGIN_MODE === 'crossed' ? 'crossed' : 'isolated',
+    statusPollMs: int(process.env.PRED_TRADE_STATUS_POLL_MS, 10_000),
+  },
 
   dbPath: process.env.PRED_DB_PATH || 'data/pred.sqlite',
   calendarFile: process.env.PRED_CALENDAR || 'data/calendar.json',

@@ -1,5 +1,5 @@
 // Optional action layer. PRED only *recommends* one of four postures; it
-// never places orders. CONSIDER_TRADE is a verified signal a separate,
+// never places orders (execution is src/trading/, human-approved only). CONSIDER_TRADE is a verified signal a separate,
 // risk-controlled execution agent may consume.
 
 export const ACTIONS = {

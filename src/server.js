@@ -12,8 +12,23 @@
 //   GET /api/events/:id/hypotheses
 //   GET /api/events/:id/evidence
 //   GET /api/memory               LIVE MEMORY statistics
-//   GET /api/signals              verified signals (PRED never trades)
+//   GET /api/signals              verified signals (agents never trade)
 //   GET /api/stream               SSE snapshots
+//
+// TRADE (human-approved execution; see src/trading/)
+//   GET  /api/auth/session                 { authenticated, csrfToken? }
+//   POST /api/auth/login {token}           operator login (PRED_ADMIN_TOKEN)
+//   POST /api/auth/logout
+//   GET  /api/trade/status                 execution readiness + limits (no secrets)
+//   GET  /api/trade/plans[?event=id]       trade plans
+//   GET  /api/trade/plans/:id              plan + audit trail
+//   POST /api/trade/events/:id/plan        human: draft a fresh plan
+//   POST /api/trade/plans/:id/review       human: fresh quote for the confirmation panel
+//   POST /api/trade/plans/:id/reject       human: discard plan
+//   POST /api/trade/plans/:id/execute {confirmation}  human: APPROVE & EXECUTE
+//   POST /api/trade/plans/:id/cancel-order human: cancel the live exchange order
+// Every POST requires the session cookie, X-PRED-CSRF and a same-origin Origin.
+// The browser only names a plan id; the server builds the order.
 //
 // DEMO (simulated; only when PRED_MODE=demo or PRED_DEMO_ENABLED=true)
 //   GET /demo, /api/demo/state|stream|signals, POST /api/demo/next|reset|autoplay
@@ -38,6 +53,26 @@ const SECURITY_HEADERS = {
 };
 const EVENT_ID_RE = /^[a-z]+-\d{1,9}$/;
 const KEY_RE = /^[A-Za-z0-9:_-]{1,40}$/;
+
+const PLAN_ID_RE = /^TP_[a-z0-9]{6,40}$/;
+
+async function readJson(req, limit = 4096) {
+  let size = 0;
+  const chunks = [];
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw Object.assign(new Error('request body too large'), { http: 413 });
+    chunks.push(c);
+  }
+  if (!size) return {};
+  try {
+    const v = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
+    return v;
+  } catch {
+    throw Object.assign(new Error('body must be a JSON object'), { http: 400 });
+  }
+}
 
 function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...SECURITY_HEADERS });
@@ -64,7 +99,7 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
   const tick = live ? setInterval(notifyLive, Math.max(5000, config.pollIntervalMs)) : null;
   tick?.unref?.();
 
-  function liveSnapshot(selectedId) {
+  function liveSnapshot(selectedId, operator = false) {
     const snap = live.engine.snapshot({ selectedId });
     const markets = live.marketsView();
     return {
@@ -74,6 +109,9 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
       markets,
       monitored: markets.map((m) => ({ ticker: m.key, company: m.company, symbol: m.symbol, price: m.lastPrice, chg1hPct: null, change24hPct: m.change24hPct, tokenizedMarket: m.tokenizedMarket, lastBarAt: m.lastCandleAt, spark: m.spark })),
       memoryLabel: 'LIVE MEMORY',
+      // Read-only view of the selected event's trade plans, for the logged-in
+      // operator's stream only (SSE can never execute).
+      tradePlans: operator && snap.selected ? live.trading.plansForEvent(snap.selected.id) : [],
     };
   }
   function demoSnapshot(selectedId, sid) {
@@ -105,6 +143,55 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
       if (p.startsWith('/api/') && !p.startsWith('/api/demo/')) {
         if (!live) return json(res, 404, { error: 'live mode disabled (PRED_MODE=demo)' });
         if (p === '/api/status') return json(res, 200, live.status());
+
+        // ---------- operator auth + human-approved trading ----------
+        if (p === '/api/auth/session') return json(res, 200, live.auth.session(req));
+        if (p === '/api/auth/login') {
+          if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
+          const body = await readJson(req);
+          const r = live.auth.login(req, body.token);
+          if (!r.ok) return json(res, r.code, { error: r.error });
+          res.setHeader('Set-Cookie', r.cookie);
+          return json(res, 200, { authenticated: true, csrfToken: r.csrfToken, expiresAt: r.expiresAt });
+        }
+        if (p === '/api/auth/logout') {
+          if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
+          res.setHeader('Set-Cookie', live.auth.logout(req));
+          return json(res, 200, { authenticated: false });
+        }
+        if (p === '/api/trade/status') return json(res, 200, live.trading.status({ operator: live.auth.session(req).authenticated }));
+        // Trade plans, fills and the audit trail are account information: operator only.
+        if ((p === '/api/trade/plans' || p.startsWith('/api/trade/plans/')) && req.method === 'GET' && !live.auth.session(req).authenticated) return json(res, 401, { error: 'operator login required' });
+        if (p === '/api/trade/plans') {
+          const ev = url.searchParams.get('event');
+          if (ev && !EVENT_ID_RE.test(ev)) return json(res, 400, { error: 'invalid event id' });
+          return json(res, 200, { plans: ev ? live.trading.plansForEvent(ev) : live.trading.recentPlans(50), execution: live.trading.status({ operator: true }) });
+        }
+        const tp = /^\/api\/trade\/plans\/([^/]+)(?:\/(review|reject|execute|cancel-order))?$/.exec(p);
+        const te = /^\/api\/trade\/events\/([^/]+)\/plan$/.exec(p);
+        if (tp || te) {
+          const id = decodeURIComponent((tp || te)[1]);
+          if (tp && !PLAN_ID_RE.test(id)) return json(res, 400, { error: 'invalid trade plan id' });
+          if (te && !EVENT_ID_RE.test(id)) return json(res, 400, { error: 'invalid event id' });
+          if (tp && !tp[2]) {
+            if (req.method !== 'GET') return json(res, 405, { error: 'GET only' });
+            const plan = live.trading.getPlan(id);
+            return plan ? json(res, 200, { plan, audit: live.trading.audit(id), execution: live.trading.status({ operator: true }) }) : json(res, 404, { error: 'trade plan not found' });
+          }
+          // State-changing: POST + operator session + CSRF + same origin.
+          const gate = live.auth.requireHuman(req);
+          if (!gate.ok) return json(res, gate.code, { error: gate.error });
+          const body = await readJson(req);
+          let r;
+          if (te) r = await live.trading.requestPlan(id, gate.approval);
+          else if (tp[2] === 'review') r = await live.trading.reviewPlan(id, gate.approval);
+          else if (tp[2] === 'reject') r = await live.trading.rejectPlan(id, gate.approval);
+          else if (tp[2] === 'execute') r = await live.trading.approveAndExecute(id, gate.approval, { confirmation: typeof body.confirmation === 'string' ? body.confirmation.slice(0, 80) : undefined });
+          else r = await live.trading.cancelOrder(id, gate.approval);
+          notifyLive();
+          const { code, ...rest } = r;
+          return json(res, r.ok ? 200 : code || 400, rest);
+        }
         if (p === '/api/assets') return json(res, 200, { venue: 'Bitget', endpoint: '/api/v3/market/instruments (isRwa=YES spot; symbolType=stock futures)', discoveredAt: live.market.status.discoveredAt, count: live.market.assets.length, monitored: live.engine.monitored.length, unmatchedFilter: live.market.unmatched, assets: live.assetsView() });
         if (p.startsWith('/api/market/')) {
           const key = decodeURIComponent(p.slice('/api/market/'.length));
@@ -149,21 +236,22 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
           const verified = s.confirmedCatalysts + s.falseHypotheses + s.liquidityAnomalies;
           return json(res, 200, { label: 'LIVE MEMORY', verifiedEvents: verified, message: s.total ? null : 'PRED MEMORY · 0 verified events', insufficientHistory: verified < 5, ...s });
         }
-        if (p === '/api/signals') return json(res, 200, { ...buildSignals(live.engine), tradingEnabled: false });
+        if (p === '/api/signals') return json(res, 200, { ...buildSignals(live.engine), tradingEnabled: live.trading.status().executionEnabled, note: 'Signals never trade. Orders require a human-approved trade plan.' });
         if (p === '/api/stream') {
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
           const selected = url.searchParams.get('event');
+          const operator = live.auth.session(req).authenticated;
           const c = { pending: false };
           const push = () => {
             if (c.pending) return;
             c.pending = true;
             setTimeout(() => {
               c.pending = false;
-              res.write(`data: ${JSON.stringify(liveSnapshot(selected))}\n\n`);
+              res.write(`data: ${JSON.stringify(liveSnapshot(selected, operator))}\n\n`);
             }, 250);
           };
           liveListeners.add(push);
-          res.write(`data: ${JSON.stringify(liveSnapshot(selected))}\n\n`);
+          res.write(`data: ${JSON.stringify(liveSnapshot(selected, operator))}\n\n`);
           const ka = setInterval(() => res.write(': ka\n\n'), 20_000);
           req.on('close', () => {
             clearInterval(ka);
@@ -231,6 +319,7 @@ export async function createPredServer({ config = defaultConfig, runtime = null,
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', ...SECURITY_HEADERS });
       fs.createReadStream(file).pipe(res);
     } catch (err) {
+      if (err?.http) return json(res, err.http, { error: err.message });
       logOp({ component: 'server', op: 'REQUEST', status: 'FAILURE', path: p, error: err });
       json(res, 500, { error: 'internal error' });
     }

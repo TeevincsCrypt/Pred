@@ -14,10 +14,14 @@ import { createCalendarSource } from '../sources/calendar.js';
 import { createUnavailableSource } from '../sources/unavailable.js';
 import { openDb } from '../store/db.js';
 import { logOp } from '../util/log.js';
+import { createTradeStore } from '../trading/store.js';
+import { createBitgetPrivateClient } from '../trading/bitget-private.js';
+import { createTradingService } from '../trading/execution.js';
+import { createOperatorAuth } from '../trading/auth.js';
 
 const label = (s) => ({ connected: 'CONNECTED', ok: 'CONNECTED', degraded: 'DEGRADED', disconnected: 'DISCONNECTED', not_configured: 'NOT CONFIGURED', unknown: 'CHECKING' })[s] || String(s || 'UNKNOWN').toUpperCase();
 
-export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analyst = null } = {}) {
+export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analyst = null, privateClient = null, auth = null } = {}) {
   const store = db || openDb(config.dbPath);
   const records = store.loadMemory('live');
   const memory = createMemory({ records, onUpsert: (r) => store.saveMemory(r) });
@@ -51,6 +55,33 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     persist: { saveEvent: (e) => store.saveEvent(e), appendLog: (id, kind, entry) => store.appendLog(id, kind, entry) },
   });
   market = createMarketEngine({ client, engine, relationships: loadRelationships(), secDirectory: () => sec.loadDirectory(), db: store, config });
+
+  // ---------- human-approved execution (separate from every agent) ----------
+  // The engine and agents never receive `trading`; the runtime only lets it
+  // draft plans from engine updates. Orders need the approval route.
+  const operatorAuth = auth || createOperatorAuth();
+  const tradeStore = createTradeStore(store.sqlite);
+  const bitgetPrivate = privateClient || createBitgetPrivateClient({ fetchImpl, baseUrl: config.bitgetBaseUrl });
+  const trading = createTradingService({
+    tradingConfig: config.trading || { enabled: false, planNotional: 25, planTtlMs: 300_000, maxDriftBps: 50, slippageBps: 10, quoteMaxAgeMs: 15_000, autoPlanMinConfidence: 60, marginMode: 'isolated', statusPollMs: 10_000, maxOrderNotional: null, maxPositionNotional: null, maxDailyNotional: null },
+    mode: 'live',
+    store: tradeStore,
+    publicClient: client,
+    privateClient: bitgetPrivate,
+    authConfigured: () => operatorAuth.configured,
+    events: (id) => engine.eventDetail(id),
+    assets: (ticker) => market.assets.find((a) => a.key === ticker) || null,
+  });
+  let autoPlanBusy = false;
+  engine.onChange(() => {
+    if (autoPlanBusy) return;
+    autoPlanBusy = true;
+    Promise.all([...engine.events.values()].map((e) => trading.maybeAutoPlan(e)))
+      .catch(() => {})
+      .finally(() => {
+        autoPlanBusy = false;
+      });
+  });
 
   // Restore persisted events so open investigations resume after a restart.
   const restored = store.loadEvents('live');
@@ -100,6 +131,10 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : secStatus === 'degraded' ? degradedNote(sec.health) : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
       gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
       claude: { name: 'Claude', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null },
+      execution: (() => {
+        const t = trading.status();
+        return { name: 'Execution', status: t.executionEnabled ? 'ARMED' : 'DISABLED', detail: t.executionEnabled ? 'Live orders possible — each one needs human approval' : t.blockers[0] };
+      })(),
       database: { name: 'Database', status: label(dbh.status), detail: dbh.error || `SQLite ${dbh.file}`, counts: dbh.counts, persistentDisk: process.env.RAILWAY_VOLUME_MOUNT_PATH ? `volume at ${process.env.RAILWAY_VOLUME_MOUNT_PATH}` : process.env.RAILWAY_ENVIRONMENT ? 'WARNING: no Railway volume — data is lost on redeploy' : 'local disk' },
     };
   }
@@ -129,7 +164,8 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       intervals: { pollMs: config.pollIntervalMs, detectorMs: config.detectorIntervalMs, assetRefreshMs: config.assetRefreshMs },
       connections: connections(),
       demoEnabled: config.demoEnabled,
-      tradingEnabled: false,
+      tradingEnabled: trading.status().executionEnabled,
+      trading: trading.status(),
     };
   }
 
@@ -172,6 +208,8 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
     client,
     sources: { sec, news, calendar, social },
     analyst: claude,
+    trading,
+    auth: operatorAuth,
     restoredEvents: restored.length,
     status,
     connections,
@@ -182,11 +220,13 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       probeSources();
       probeTimer = setInterval(probeSources, config.sourceProbeMs);
       pruneTimer = setInterval(() => store.prune(), 3600_000);
+      trading.startTracking();
       await market.start();
     },
     stop() {
       clearInterval(probeTimer);
       clearInterval(pruneTimer);
+      trading.stopTracking();
       market.stop();
     },
   };

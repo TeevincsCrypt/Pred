@@ -22,7 +22,7 @@ Built for the **Bitget AI Genesis Season 2** hackathon.
 node --version            # >= 22.5 (uses the built-in node:sqlite)
 npm start                 # PRED LIVE on http://localhost:8787
 npm run check:live        # production health check against the real endpoints
-npm test                  # 32 tests
+npm test                  # node:test suites
 ```
 
 `/` is the landing page and `/app` opens **PRED LIVE**, the live dashboard. The simulated demo lives only at `/demo` and is **off** unless you set `PRED_DEMO_ENABLED=true` or run `npm run start:demo`.
@@ -129,7 +129,80 @@ Set `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, for example `claude-opus-5`. The 
 
 ### 9. No autonomous trading
 
-PRED recommends one of **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. It never places orders, and the server has no order-placement code. No private API keys are required or used. `GET /api/signals` publishes confirmed signals with a risk policy for a *separate* execution agent; `examples/execution-agent.mjs` is a dry-run consumer.
+PRED recommends one of **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. Its agents never place orders. `GET /api/signals` publishes confirmed signals. Acting on them is a separate, human-approved step — see **Human-approved execution** below.
+
+
+### 10. Human-approved execution
+
+PRED can submit **real** Bitget orders, but **only after a human approves a specific trade plan**. No agent, background loop, SSE stream or webhook can place an order. Live execution is **off by default** (`PRED_TRADING_ENABLED=false`).
+
+```
+LIVE MARKET DATA → GHOST EVENT → INVESTIGATION → HYPOTHESIS → VERIFICATION → REACTION PREDICTION
+→ TRADE PLAN → HUMAN REVIEW → EXPLICIT APPROVAL → REVALIDATION → REAL ORDER → ORDER STATUS → AUDIT TRAIL
+```
+
+**Where it lives.** Everything is in `src/trading/`, separate from the agents. A test fails the build if any agent, engine, demo or market module imports it, or if `placeOrder(` is called anywhere except the single call site in `execution.js`.
+
+| File | Role |
+|---|---|
+| `bitget-private.js` | Signed Bitget **Unified Trading API v3** client. Secrets stay in a closure. POSTs are never retried. |
+| `rules.js` | Pure logic: instrument precision, plan construction, order construction, risk checks, status mapping |
+| `store.js` | `trade_plans` + append-only `trade_audit` tables; atomic status transitions |
+| `execution.js` | The trading service. `approveAndExecute` is the only path to `placeOrder` |
+| `auth.js` | Operator login (`PRED_ADMIN_TOKEN`), session cookie, CSRF |
+
+**Bitget endpoints** (verified against the official `bitget-api` SDK v3 typings). The signature is `base64(HMAC-SHA256(secret, timestamp + METHOD + path + query|body))`, sent with the `ACCESS-KEY / ACCESS-SIGN / ACCESS-TIMESTAMP / ACCESS-PASSPHRASE` headers.
+- `POST /api/v3/trade/place-order`: `category, symbol, qty, price, side, orderType=limit, timeInForce=gtc, clientOid=<executionId>`. Futures orders also send `marginMode`, `posSide` (hedge mode only), `takeProfit` and `stopLoss`.
+- `GET /api/v3/trade/order-info`: order status by `orderId`, or by `clientOid` to reconcile after a timeout.
+- `POST /api/v3/trade/cancel-order`: human-initiated cancel.
+- `GET /api/v3/account/settings`, `GET /api/v3/account/assets`, `GET /api/v3/position/current-position`: used for revalidation.
+- `GET /api/v3/market/instruments?symbol=`: `status`, `minOrderQty`, `maxOrderQty`, `quantityMultiplier/Precision`, `priceMultiplier/Precision`, `minOrderAmount`.
+
+The Bitget account must be a **Unified Trading Account**. `check:live` reports the account mode.
+
+**Trade plans.** Plans are created in two ways:
+- *automatically*, when a reaction prediction is OK, directional and ≥ `PRED_TRADE_MIN_CONFIDENCE`;
+- *on request*, from a logged-in human ("Generate trade plan"). While live memory has no history, these plans are labelled **LOW CONFIDENCE** and follow the detected move's direction.
+
+Each plan is sized to about `PRED_TRADE_NOTIONAL` USDT (never above `PRED_MAX_ORDER_NOTIONAL`). Quantity and price are rounded to Bitget's live precision. Stop and target come from the reaction range. A plan expires after `PRED_TRADE_PLAN_TTL_MS`. Spot tokens are long-only. **Confidence never authorises an order.**
+
+Statuses: `AWAITING_APPROVAL → APPROVED → SUBMITTING → SUBMITTED → PARTIALLY_FILLED → FILLED`, or `CANCELLED / REJECTED / EXPIRED / FAILED`. *Submitted* means Bitget accepted the order. *Filled* is set only from Bitget's order status.
+
+**Approval.** The dashboard's **Trade** panel keeps *Prediction* (intelligence) and *Execution* (red, "LIVE ORDER") visibly separate. After **Review trade** it shows:
+- asset, direction, order type, quantity, estimated price and notional;
+- stop and target, and PRED's confidence;
+- the reasoning and the evidence behind it, and the current bid/ask;
+- how many seconds ago the market data was refreshed, and when the plan expires.
+
+**Approve & execute** sends `POST /api/trade/plans/:id/execute` with the plan's exact confirmation phrase (e.g. `BUY 0.12 NVDAUSDT`). That route requires:
+- the operator session cookie (HttpOnly, SameSite=Strict);
+- the session's CSRF token in `X-PRED-CSRF`;
+- a same-origin `Origin` header.
+
+GET requests never execute. The browser sends a plan id only; symbol, side, quantity and price are rebuilt server-side, and any other fields in the request are ignored.
+
+**Before any order is sent**, the server:
+1. reloads the plan from the database;
+2. claims it atomically (`UPDATE … WHERE status='AWAITING_APPROVAL' AND execution_id IS NULL`), so only one request can win;
+3. checks the plan hasn't expired;
+4. fetches fresh instrument metadata and a fresh ticker, and rejects if the price moved more than `PRED_TRADE_MAX_DRIFT_BPS`;
+5. re-checks precision, minimum and maximum quantity, and minimum order value;
+6. reads the account mode, the available USDT (the full order value plus fees must be available, i.e. 1× margin), and the current position;
+7. applies the order, position and daily limits;
+8. confirms trading is still enabled.
+
+If anything changed, the plan is marked `EXPIRED` or `REJECTED` and you are asked to review a fresh one.
+
+A double-click or a concurrent request gets the existing execution back and never creates a second order. If Bitget doesn't answer an order request, PRED **reconciles by `clientOid`** instead of resending. A read-only tracker then polls the order status every `PRED_TRADE_STATUS_POLL_MS`.
+
+**Audit.** Every step is written to `trade_audit` with timestamp, event id, plan id, execution id, symbol, actor (`human` / `system`) and result. The step kinds are:
+- plan: `TRADE_PLAN_CREATED`, `TRADE_PLAN_REVIEWED`, `TRADE_PLAN_EXPIRED`;
+- approval: `TRADE_APPROVAL_REQUESTED`, `TRADE_APPROVED`, `TRADE_REJECTED`;
+- order: `ORDER_SUBMISSION_STARTED`, `ORDER_SUBMITTED`, `ORDER_PARTIALLY_FILLED`, `ORDER_FILLED`, `ORDER_CANCELLED`, `ORDER_REJECTED`, `ORDER_FAILED`.
+
+`GET /api/trade/plans/:id` answers "why was this trade submitted?". Secrets are never stored, logged or returned.
+
+**Turning it on (deliberately).** Execution stays disabled until **all** of these are true: `PRED_TRADING_ENABLED=true`, the Bitget API key/secret/passphrase are set, `PRED_ADMIN_TOKEN` is at least 24 characters, and all three safety limits are set. `/api/status` → `trading.blockers` lists whatever is still missing.
 
 ---
 
@@ -147,10 +220,22 @@ PRED recommends one of **MONITOR / WAIT / RESEARCH / CONSIDER TRADE**. It never 
 | GET | `/api/events/:id/hypotheses` | every revision |
 | GET | `/api/events/:id/evidence` | evidence and source checks |
 | GET | `/api/memory` | LIVE MEMORY statistics |
-| GET | `/api/signals` | verified signals and risk policy (`tradingEnabled: false`) |
+| GET | `/api/signals` | verified signals (signals never trade) |
 | GET | `/api/stream` | Server-Sent Events: a snapshot on every engine change and every poll |
 
-The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessions.
+| GET | `/api/auth/session` | `{ authenticated, csrfToken? }` |
+| POST | `/api/auth/login` `{token}` | operator login → session cookie |
+| POST | `/api/auth/logout` | |
+| GET | `/api/trade/status` | execution readiness, blockers, limits (no secrets) |
+| GET | `/api/trade/plans` (`?event=id`) | trade plans |
+| GET | `/api/trade/plans/:id` | plan + audit trail |
+| POST | `/api/trade/events/:id/plan` | human: draft a fresh plan |
+| POST | `/api/trade/plans/:id/review` | human: fresh quote for the confirmation panel |
+| POST | `/api/trade/plans/:id/reject` | human: discard the plan |
+| POST | `/api/trade/plans/:id/execute` `{confirmation}` | human: **approve & execute** |
+| POST | `/api/trade/plans/:id/cancel-order` | human: cancel the open Bitget order |
+
+Every trade POST needs the session cookie, `X-PRED-CSRF` and a same-origin `Origin`. The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessions and has no trade routes.
 
 ## Environment
 
@@ -175,6 +260,21 @@ The demo, when enabled, is namespaced under `/api/demo/*` with per-browser sessi
 | `PRED_CALENDAR` | `data/calendar.json` | scheduled events you maintain |
 | `PRED_RELATIONSHIPS_FILE` | – | extend or override the peer map |
 | `PRED_LOG_FORMAT` | text | `json` for JSON-lines logs |
+| **Execution** | | *(all off by default)* |
+| `PRED_TRADING_ENABLED` | `false` | must be exactly `true` to allow live orders |
+| `BITGET_API_KEY`, `BITGET_API_SECRET`, `BITGET_API_PASSPHRASE` | – | Bitget API key with **trade** permission (Unified Trading Account); never logged or returned |
+| `PRED_ADMIN_TOKEN` | – | operator secret (24+ chars) for the approval login |
+| `PRED_MAX_ORDER_NOTIONAL` | – (execution disabled) | max USDT per order, e.g. `25` |
+| `PRED_MAX_POSITION_NOTIONAL` | – (execution disabled) | max USDT position per symbol incl. this order, e.g. `50` |
+| `PRED_MAX_DAILY_TRADING_NOTIONAL` | – (execution disabled) | max USDT submitted per UTC day, e.g. `100` |
+| `PRED_TRADE_NOTIONAL` | `25` | target plan size (capped by the order limit) |
+| `PRED_TRADE_PLAN_TTL_MS` | `300000` | plan expiry |
+| `PRED_TRADE_MAX_DRIFT_BPS` | `50` | max price move between plan and execution |
+| `PRED_TRADE_SLIPPAGE_BPS` | `10` | limit price this far through the touch |
+| `PRED_TRADE_QUOTE_MAX_AGE_MS` | `15000` | freshest-quote requirement at execution |
+| `PRED_TRADE_MIN_CONFIDENCE` | `60` | reaction confidence needed for an automatic plan |
+| `PRED_TRADE_MARGIN_MODE` | `isolated` | futures margin mode (`isolated`/`crossed`) |
+| `PRED_TRADE_STATUS_POLL_MS` | `10000` | order-status polling |
 
 Logs are structured, one line per operation: `[ts] [COMPONENT] [event] OP STATUS duration fields`. Secrets and request headers are never logged. No secret ever reaches the browser, and the Content-Security-Policy restricts the page to its own origin.
 
@@ -184,7 +284,8 @@ Logs are structured, one line per operation: `[ts] [COMPONENT] [event] OP STATUS
 2. **Variables**: `SEC_USER_AGENT="Your Name you@example.com"`, `PRED_DB_PATH=/app/data/pred.sqlite`. Optionally set `PRED_ASSETS`, `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`.
 3. **Volume**: attach one mounted at `/app/data`, otherwise events are lost on every redeploy.
 4. **Networking → Generate Domain.**
-5. Verify from inside the running service: `railway ssh`, then `npm run check:live`. Running it on your own machine also works as a connectivity test. It prints ✓ or the exact failure for Bitget, Instruments, Market Data, SEC, GDELT, Database, SSE and Detector. Then open `/api/status` and `/api/assets`.
+5. Verify from inside the running service: `railway ssh`, then `npm run check:live`. Running it on your own machine also works as a connectivity test. It prints ✓ or the exact failure for Bitget, Instruments, Market Data, SEC, GDELT, Database, SSE and Detector, plus the execution checks (config, limits, credentials, account, a dry-run trade plan, the approval gate). **It never places an order.** Then open `/api/status` and `/api/assets`.
+6. Execution stays off until you deliberately set `PRED_TRADING_ENABLED=true` together with the Bitget key/secret/passphrase, `PRED_ADMIN_TOKEN` and the three `PRED_MAX_*` limits.
 
 If Bitget ever answers 403 from a hosting region, the check shows it. Point `BITGET_BASE_URL` at an allowed endpoint or proxy, or deploy the service in a region Bitget serves. PRED never falls back to simulated data.
 
@@ -201,6 +302,7 @@ src/
   market/      bitget (v3 client + normalizer) · live-universe · market-engine · hours · relationships · series
   sources/     sec · news (GDELT) · calendar · unavailable · scripted (demo only)
   live/        runtime (wires the live system; imports no demo code)
+  trading/     human-approved execution: bitget-private · rules · store · execution · auth
   store/       db (node:sqlite)
   demo/        simulated scenario, runner, sessions, seed
   server.js    HTTP + SSE
