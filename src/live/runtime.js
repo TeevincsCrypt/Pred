@@ -4,7 +4,7 @@
 
 import { createEngine } from '../core/engine.js';
 import { createMemory } from '../agents/memory.js';
-import { createAnalyst } from '../agents/analyst.js';
+import { selectAnalyst } from '../agents/analyst-select.js';
 import { createBitgetClient } from '../market/bitget.js';
 import { createMarketEngine, CRYPTO_REFS } from '../market/market-engine.js';
 import { loadRelationships } from '../market/relationships.js';
@@ -30,7 +30,7 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
   const news = createNewsSource({ fetchImpl });
   const calendar = createCalendarSource({ file: config.calendarFile });
   const social = createUnavailableSource('social', 'Social / web signals', 'social', 'No social data connector configured');
-  const claude = analyst || createAnalyst();
+  const claude = analyst || selectAnalyst();
   const sources = [news, sec, social, calendar];
   const startedAt = Date.now();
   const probes = { sec: null, gdelt: null };
@@ -130,7 +130,7 @@ export function createLiveRuntime({ config, fetchImpl = fetch, db = null, analys
       bitget: { name: 'Bitget', status: label(client.health.status), detail: client.health.lastError || `${market.assets.length} RWA instruments · ${client.baseUrl}`, ...h(client.health) },
       sec: { name: 'SEC EDGAR', status: label(secStatus), detail: !sec.configured ? 'Set SEC_USER_AGENT (name + email)' : secStatus === 'degraded' ? degradedNote(sec.health) : sec.health.lastError || (secStatus === 'connected' ? okNote(sec.health, probes.sec) : probes.sec?.note) || null, ...h(sec.health) },
       gdelt: { name: 'GDELT', status: label(gdeltStatus), detail: gdeltStatus === 'degraded' ? degradedNote(news.health) : news.health.lastError || (gdeltStatus === 'connected' ? okNote(news.health, probes.gdelt) : probes.gdelt?.note) || null, ...h(news.health) },
-      claude: { name: 'Claude', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null },
+      claude: { name: claude.enabled ? `AI analyst · ${claude.providerName || 'Claude'}` : 'AI analyst', status: claude.enabled ? label(claude.status.status) : 'OPTIONAL', detail: claude.status.note, model: claude.model || null, provider: claude.provider || null },
       execution: (() => {
         const t = trading.status();
         return { name: 'Execution', status: t.executionEnabled ? 'ARMED' : 'DISABLED', detail: t.executionEnabled ? 'Live orders possible — each one needs human approval' : t.blockers[0] };
