@@ -133,5 +133,5 @@ export function buildUniverse({ spot = [], futures = [], tickers = new Map(), re
     a.siblings = siblings;
     a.peers = [...new Set([...siblings, ...related])].slice(0, 6);
   }
-  return { assets, monitored: monitored.map((a) => a.key), unmatched };
+  return { assets, monitored: monitored.map((a) => a.key), unmatched, eligible: eligible.length };
 }

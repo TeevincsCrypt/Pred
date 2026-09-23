@@ -49,6 +49,10 @@ test('universe is discovered from isRwa / stock instruments only', () => {
   assert.deepEqual(u.assets.map((a) => a.symbol).sort(), ['AMDXUSDT', 'NVDAONUSDT', 'NVDAUSDT', 'NVDAXUSDT', 'XAUTUSDT']);
   assert.ok(!u.monitored.includes('XAUT'), 'commodities are listed but not monitored as equities');
   assert.ok(u.monitored.includes('NVDA-PERP'), 'US-listed stock perps are monitored by default');
+  assert.equal(u.eligible, 4, 'eligible = US-listed equities (NVDAx, NVDAon, AMDx, NVDA-PERP); XAUT excluded');
+  const capped = buildUniverse({ spot, relationships: DEFAULT_RELATIONSHIPS, opts: { maxAssets: 1 } });
+  assert.equal(capped.monitored.length, 1);
+  assert.equal(buildUniverse({ spot, relationships: DEFAULT_RELATIONSHIPS, opts: { maxAssets: Infinity } }).monitored.length, 3, 'PRED_MAX_ASSETS=all watches every eligible instrument');
   const spotOnly = buildUniverse({ spot, futures: [{ symbol: 'NVDAUSDT', category: 'USDT-FUTURES', baseCoin: 'NVDA', quoteCoin: 'USDT', status: 'online', symbolType: 'stock' }], relationships: DEFAULT_RELATIONSHIPS, opts: { categories: ['SPOT'] } });
   assert.ok(!spotOnly.monitored.includes('NVDA-PERP'), 'stock perps are not monitored when that category is disabled');
   const nvdax = u.assets.find((a) => a.key === 'NVDAx');

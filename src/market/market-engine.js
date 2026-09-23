@@ -12,6 +12,9 @@ import { logOp } from '../util/log.js';
 import { median, mean, std, logReturns, round } from '../util/stats.js';
 
 const MIN = 60_000;
+// 60 candle requests per 15s poll at 120ms spacing ≈ 4 req/s on average.
+const MAX_CANDLE_BATCH = 60;
+
 export const CRYPTO_REFS = { BTC: 'BTCUSDT', ETH: 'ETHUSDT' };
 
 export function createMarketEngine({ client, engine, relationships, secDirectory = async () => null, db = null, config }) {
@@ -19,6 +22,7 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
   const monitored = engine.monitored; // shared, mutated in place
   let assets = []; // every discovered tokenized-equity instrument
   let unmatched = [];
+  let eligibleCount = 0;
   const tickers = new Map(); // symbol → normalized ticker
   const state = new Map(); // key → market state
   const candleMeta = new Map(); // key → { lastFetch, backfilled }
@@ -48,6 +52,7 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
       const built = buildUniverse({ spot, futures, tickers, relationships, secDirectory: dir, opts: { assetsFilter: config.assets, maxAssets: config.maxAssets, categories: config.categories } });
       assets = built.assets;
       unmatched = built.unmatched;
+      eligibleCount = built.eligible;
       for (const k of Object.keys(universe)) delete universe[k];
       for (const a of assets) universe[a.key] = a;
       monitored.splice(0, monitored.length, ...built.monitored);
@@ -102,7 +107,10 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
     const map = keyToSymbol();
     const now = Date.now();
     const due = trackedKeys().filter((k) => map.get(k) && now - (candleMeta.get(k)?.lastFetch ?? 0) >= config.candleRefreshMs);
-    const batch = due.slice(0, config.candleBatch);
+    // Size each batch so every tracked asset refreshes about once per
+    // candleRefreshMs, capped to stay far below Bitget's public rate limits.
+    const perPoll = Math.ceil((trackedKeys().length * config.pollIntervalMs) / config.candleRefreshMs) + 2;
+    const batch = due.slice(0, Math.min(MAX_CANDLE_BATCH, Math.max(config.candleBatch, perPoll)));
     await Promise.all(
       batch.map(async (key) => {
         const a = map.get(key);
@@ -222,6 +230,9 @@ export function createMarketEngine({ client, engine, relationships, secDirectory
     },
     get unmatched() {
       return unmatched;
+    },
+    get eligibleCount() {
+      return eligibleCount;
     },
     tickers,
     marketState,
